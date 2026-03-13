@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}登录 — AI OKX Trader{% endblock %}
+{% block content %}
+
+<div class="min-h-screen flex items-center justify-center bg-gray-950 px-4">
+  <div class="w-full max-w-md">
+
+    <div class="text-center mb-6 sm:mb-8">
+      <div class="text-2xl sm:text-3xl font-bold text-blue-400 mb-1">AI OKX Trader</div>
+      <div class="text-gray-500 text-xs sm:text-sm">v2 · 永续合约智能交易平台</div>
+    </div>
+
+    <div class="bg-gray-900 border border-gray-800 rounded-xl sm:rounded-2xl p-6 sm:p-8 shadow-2xl">
+      <h2 class="text-lg sm:text-xl font-semibold mb-5 sm:mb-6 text-gray-100">登录</h2>
+
+      {% if error %}
+      <div class="mb-4 px-4 py-3 rounded-lg bg-red-900/40 border border-red-700 text-red-300 text-sm">
+        {{ error }}
+      </div>
+      {% endif %}
+
+      <form action="/login" method="post" class="space-y-5">
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">账户 ID</label>
+          <input
+            type="text"
+            name="unique_id"
+            required
+            autocomplete="username"
+            placeholder="输入你的唯一标识"
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-gray-100 placeholder-gray-600 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-sm"
+          />
+        </div>
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">TOTP 验证码</label>
+          <input
+            type="text"
+            name="totp_token"
+            required
+            inputmode="numeric"
+            maxlength="6"
+            placeholder="6 位动态码"
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-gray-100 placeholder-gray-600 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-sm tracking-widest"
+          />
+        </div>
+        <button
+          type="submit"
+          class="w-full bg-blue-600 hover:bg-blue-500 text-white font-medium py-2.5 rounded-lg transition-colors text-sm"
+        >
+          登录
+        </button>
+      </form>
+
+      <div class="mt-6 text-center text-sm text-gray-600">
+        首次使用？
+        <a href="/setup" class="text-blue-400 hover:text-blue-300 ml-1">激活账户</a>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+{% endblock %}

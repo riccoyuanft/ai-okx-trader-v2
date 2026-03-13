@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block title %}激活账户 — AI OKX Trader{% endblock %}
+{% block content %}
+
+<div class="min-h-screen flex items-center justify-center bg-gray-950">
+  <div class="w-full max-w-md">
+
+    <div class="text-center mb-8">
+      <div class="text-3xl font-bold text-blue-400 mb-1">AI OKX Trader</div>
+      <div class="text-gray-500 text-sm">首次激活账户</div>
+    </div>
+
+    <div class="bg-gray-900 border border-gray-800 rounded-2xl p-8 shadow-2xl">
+
+      {% if step == "form" %}
+
+      <h2 class="text-xl font-semibold mb-2 text-gray-100">激活账户</h2>
+      <p class="text-sm text-gray-500 mb-6">填写 OKX API 信息（支持模拟盘和实盘）。系统会自动验证 API Key 是否有效，验证通过后才能继续绑定 TOTP。API Key 只需交易权限，无需提现权限。</p>
+
+      {% if error %}
+      <div class="mb-4 px-4 py-3 rounded-lg bg-red-900/40 border border-red-700 text-red-300 text-sm">{{ error }}</div>
+      {% endif %}
+
+      <form action="/setup/init" method="post" class="space-y-4" x-data="{loading: false}" @submit="loading = true">
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">账户 ID <span class="text-gray-600">（自定义唯一标识）</span></label>
+          <input type="text" name="unique_id" required placeholder="如: alice_trader"
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-gray-100 placeholder-gray-600 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-sm" />
+        </div>
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">OKX API Key</label>
+          <input type="text" name="okx_api_key" required
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-gray-100 placeholder-gray-600 focus:outline-none focus:border-blue-500 text-sm font-mono" />
+        </div>
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">OKX Secret Key</label>
+          <input type="password" name="okx_secret_key" required
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-gray-100 placeholder-gray-600 focus:outline-none focus:border-blue-500 text-sm font-mono" />
+        </div>
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">OKX Passphrase</label>
+          <input type="password" name="okx_passphrase" required
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-gray-100 placeholder-gray-600 focus:outline-none focus:border-blue-500 text-sm font-mono" />
+        </div>
+        <div>
+          <label class="block text-sm text-gray-400 mb-2">这个 API Key 属于</label>
+          <div class="grid grid-cols-2 gap-3">
+            <label class="flex items-center gap-3 bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 cursor-pointer has-[:checked]:border-blue-500 has-[:checked]:bg-blue-950/30 transition-colors">
+              <input type="radio" name="okx_testnet" value="true" checked class="accent-blue-500" />
+              <div>
+                <div class="text-sm font-medium text-gray-200">模拟盘</div>
+                <div class="text-xs text-gray-500">Paper Trading / Testnet</div>
+              </div>
+            </label>
+            <label class="flex items-center gap-3 bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 cursor-pointer has-[:checked]:border-yellow-500 has-[:checked]:bg-yellow-950/20 transition-colors">
+              <input type="radio" name="okx_testnet" value="false" class="accent-yellow-500" />
+              <div>
+                <div class="text-sm font-medium text-gray-200">实盘</div>
+                <div class="text-xs text-gray-500">Live Trading</div>
+              </div>
+            </label>
+          </div>
+        </div>
+        <button type="submit" :disabled="loading"
+          class="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-60 text-white font-medium py-2.5 rounded-lg transition-colors text-sm mt-2 flex items-center justify-center gap-2">
+          <svg x-show="loading" class="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path>
+          </svg>
+          <span x-text="loading ? '验证 API Key 中...' : '下一步：绑定 TOTP'"></span>
+        </button>
+      </form>
+
+      <div class="mt-6 text-center text-sm text-gray-600">
+        已有账户？<a href="/login" class="text-blue-400 hover:text-blue-300 ml-1">直接登录</a>
+      </div>
+
+      {% elif step == "qr" %}
+
+      <h2 class="text-xl font-semibold mb-2 text-gray-100">绑定 TOTP 验证器</h2>
+      <p class="text-sm text-gray-500 mb-6">用 Google Authenticator 或 Authenticator 扫码，然后输入 6 位验证码完成激活。</p>
+
+      {% if error %}
+      <div class="mb-4 px-4 py-3 rounded-lg bg-red-900/40 border border-red-700 text-red-300 text-sm">{{ error }}</div>
+      {% endif %}
+
+      <div class="flex justify-center mb-6">
+        <div class="bg-white p-3 rounded-xl">
+          <img src="data:image/png;base64,{{ qr_base64 }}" alt="TOTP QR Code" class="w-44 h-44" />
+        </div>
+      </div>
+
+      <form action="/setup/confirm" method="post" class="space-y-4">
+        <input type="hidden" name="session_id" value="{{ session_id }}" />
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">TOTP 验证码</label>
+          <input type="text" name="totp_token" required inputmode="numeric" maxlength="6"
+            placeholder="输入 6 位动态码"
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-gray-100 placeholder-gray-600 focus:outline-none focus:border-blue-500 text-sm tracking-widest text-center text-lg" />
+        </div>
+        <button type="submit"
+          class="w-full bg-green-600 hover:bg-green-500 text-white font-medium py-2.5 rounded-lg transition-colors text-sm">
+          确认激活
+        </button>
+      </form>
+
+      {% endif %}
+
+    </div>
+  </div>
+</div>
+
+{% endblock %}

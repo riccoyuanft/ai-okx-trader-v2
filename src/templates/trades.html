@@ -1,0 +1,161 @@
+{% extends "base.html" %}
+{% block title %}交易记录 — AI OKX Trader{% endblock %}
+{% block content %}
+
+<div class="max-w-5xl mx-auto">
+  <div class="flex items-center justify-between mb-6">
+    <h1 class="text-xl font-semibold text-gray-100">交易记录</h1>
+    <div class="text-sm text-gray-500">本页 {{ trades | length }} 条</div>
+  </div>
+
+  <!-- Stats Bar -->
+  <div class="grid grid-cols-3 gap-4 mb-6">
+    <div class="bg-gray-900 border border-gray-800 rounded-xl p-4 text-center">
+      <div class="text-xs text-gray-500 mb-1">已完结交易</div>
+      <div class="text-2xl font-bold text-gray-100">{{ closed_count }}</div>
+    </div>
+    <div class="bg-gray-900 border border-gray-800 rounded-xl p-4 text-center">
+      <div class="text-xs text-gray-500 mb-1">胜率</div>
+      <div class="text-2xl font-bold {% if win_rate >= 50 %}text-green-400{% else %}text-red-400{% endif %}">{{ win_rate }}%</div>
+    </div>
+    <div class="bg-gray-900 border border-gray-800 rounded-xl p-4 text-center">
+      <div class="text-xs text-gray-500 mb-1">本页累计盈亏 (USDT)</div>
+      <div class="text-2xl font-bold {% if total_pnl >= 0 %}text-green-400{% else %}text-red-400{% endif %}">
+        {% if total_pnl >= 0 %}+{% endif %}{{ total_pnl }}
+      </div>
+    </div>
+  </div>
+
+  {% if trades %}
+
+  {# ── Mobile card list (hidden on sm+) ── #}
+  <div class="sm:hidden space-y-3">
+    {% for t in trades %}
+    {% set dir_cn = "多" if t.direction == "long" else "空" %}
+    {% set dir_color = "text-green-400" if t.direction == "long" else "text-red-400" %}
+    {% set pnl_color = "text-green-400" if t.pnl_usdt and t.pnl_usdt >= 0 else "text-red-400" %}
+    <div class="bg-gray-900 border border-gray-800 rounded-xl p-4">
+      <div class="flex items-center justify-between mb-2">
+        <div class="flex items-center gap-2">
+          <span class="{{ dir_color }} font-bold text-base">{{ dir_cn }}</span>
+          <span class="font-mono text-gray-400 text-xs">{{ t.symbol }}</span>
+          <span class="text-gray-600 text-xs">{{ t.leverage }}x</span>
+        </div>
+        <div>
+          {% if t.close_reason %}
+          <span class="px-2 py-0.5 rounded-full text-xs
+            {% if t.close_reason == 'sl' %}bg-red-900/40 text-red-400
+            {% elif t.close_reason == 'tp' %}bg-green-900/40 text-green-400
+            {% elif t.close_reason == 'ai_close' %}bg-blue-900/40 text-blue-400
+            {% elif t.close_reason == 'liquidation_guard' %}bg-orange-900/40 text-orange-400
+            {% else %}bg-gray-800 text-gray-500{% endif %}">
+            {{ t.close_reason }}
+          </span>
+          {% elif not t.exit_price %}
+          <span class="px-2 py-0.5 rounded-full text-xs bg-yellow-900/40 text-yellow-400">持仓中</span>
+          {% endif %}
+        </div>
+      </div>
+      <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+        <div class="text-gray-500">入场价</div>
+        <div class="font-mono text-gray-300 text-right">{{ t.entry_price }}</div>
+        <div class="text-gray-500">出场价</div>
+        <div class="font-mono text-right">
+          {% if t.exit_price %}<span class="text-gray-300">{{ t.exit_price }}</span>
+          {% else %}<span class="text-gray-600">—</span>{% endif %}
+        </div>
+        <div class="text-gray-500">数量</div>
+        <div class="text-gray-400 text-right">{{ t.qty }} 张</div>
+        <div class="text-gray-500">盈亏</div>
+        <div class="font-mono font-semibold text-right {{ pnl_color }}">
+          {% if t.pnl_usdt is not none %}
+            {% if t.pnl_usdt >= 0 %}+{% endif %}{{ "%.2f" | format(t.pnl_usdt) }} USDT
+          {% else %}<span class="text-gray-600">—</span>{% endif %}
+        </div>
+      </div>
+      <div class="mt-2 text-gray-700 text-xs">{{ t.open_time[:16] if t.open_time else '—' }}</div>
+    </div>
+    {% endfor %}
+  </div>
+
+  {# ── Desktop table (hidden on mobile) ── #}
+  <div class="hidden sm:block bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
+    <table class="w-full text-sm">
+      <thead>
+        <tr class="text-gray-500 text-xs border-b border-gray-800">
+          <th class="text-left px-4 py-3 font-medium">标的</th>
+          <th class="text-left px-3 py-3 font-medium">方向</th>
+          <th class="text-right px-3 py-3 font-medium">入场</th>
+          <th class="text-right px-3 py-3 font-medium">出场</th>
+          <th class="text-right px-3 py-3 font-medium">张数</th>
+          <th class="text-right px-3 py-3 font-medium">杠杆</th>
+          <th class="text-right px-3 py-3 font-medium">盈亏 (USDT)</th>
+          <th class="text-left px-3 py-3 font-medium">原因</th>
+          <th class="text-left px-3 py-3 font-medium">时间</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-800/50">
+        {% for t in trades %}
+        <tr class="hover:bg-gray-800/30 transition-colors">
+          <td class="px-4 py-3 font-mono text-gray-300 text-xs">{{ t.symbol }}</td>
+          <td class="px-3 py-3">
+            <span class="{% if t.direction == 'long' %}text-green-400{% else %}text-red-400{% endif %} font-medium text-xs">
+              {{ "多" if t.direction == "long" else "空" }}
+            </span>
+          </td>
+          <td class="px-3 py-3 text-right text-gray-300 font-mono text-xs">{{ t.entry_price }}</td>
+          <td class="px-3 py-3 text-right font-mono text-xs">
+            {% if t.exit_price %}<span class="text-gray-300">{{ t.exit_price }}</span>
+            {% else %}<span class="text-yellow-500">持仓中</span>{% endif %}
+          </td>
+          <td class="px-3 py-3 text-right text-gray-400 text-xs">{{ t.qty }}</td>
+          <td class="px-3 py-3 text-right text-gray-400 text-xs">{{ t.leverage }}x</td>
+          <td class="px-3 py-3 text-right font-mono text-xs font-medium">
+            {% if t.pnl_usdt is not none %}
+              <span class="{% if t.pnl_usdt >= 0 %}text-green-400{% else %}text-red-400{% endif %}">
+                {% if t.pnl_usdt >= 0 %}+{% endif %}{{ "%.2f" | format(t.pnl_usdt) }}
+              </span>
+            {% else %}<span class="text-gray-600">—</span>{% endif %}
+          </td>
+          <td class="px-3 py-3 text-xs">
+            {% if t.close_reason %}
+            <span class="px-2 py-0.5 rounded-full text-xs
+              {% if t.close_reason == 'sl' %}bg-red-900/40 text-red-400
+              {% elif t.close_reason == 'tp' %}bg-green-900/40 text-green-400
+              {% elif t.close_reason == 'ai_close' %}bg-blue-900/40 text-blue-400
+              {% elif t.close_reason == 'liquidation_guard' %}bg-orange-900/40 text-orange-400
+              {% else %}bg-gray-800 text-gray-500{% endif %}">
+              {{ t.close_reason }}
+            </span>
+            {% else %}<span class="text-gray-700">—</span>{% endif %}
+          </td>
+          <td class="px-3 py-3 text-gray-600 text-xs whitespace-nowrap">
+            {{ t.open_time[:16] if t.open_time else '—' }}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Pagination -->
+  <div class="flex justify-between mt-4">
+    {% if page > 1 %}
+    <a href="/trades?page={{ page - 1 }}" class="text-sm text-blue-400 hover:text-blue-300">← 上一页</a>
+    {% else %}
+    <span></span>
+    {% endif %}
+    {% if has_more %}
+    <a href="/trades?page={{ page + 1 }}" class="text-sm text-blue-400 hover:text-blue-300">下一页 →</a>
+    {% endif %}
+  </div>
+
+  {% else %}
+  <div class="bg-gray-900 border border-gray-800 rounded-2xl p-12 text-center">
+    <div class="text-gray-600">暂无交易记录</div>
+  </div>
+  {% endif %}
+
+</div>
+
+{% endblock %}

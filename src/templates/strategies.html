@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block title %}策略管理 — AI OKX Trader{% endblock %}
+{% block content %}
+
+<div class="max-w-4xl mx-auto" x-data="{ guideOpen: {{ (not strategies) | tojson }} }">
+  <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+    <h1 class="text-lg sm:text-xl font-semibold text-gray-100">策略管理</h1>
+    <div class="flex items-center gap-2 sm:gap-3">
+      <button @click="guideOpen=!guideOpen"
+        class="text-xs text-gray-500 hover:text-gray-300 border border-gray-700 hover:border-gray-600 px-2.5 sm:px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap"
+        x-text="guideOpen ? '收起指引' : '使用指引'"></button>
+      <a href="/strategies/new"
+        class="bg-blue-600 hover:bg-blue-500 text-white text-xs sm:text-sm px-3 sm:px-4 py-2 rounded-lg transition-colors whitespace-nowrap">
+        + 新建策略
+      </a>
+    </div>
+  </div>
+
+  <!-- Quick Start Guide -->
+  <div x-show="guideOpen" x-cloak x-transition class="mb-4 sm:mb-6 bg-gray-900 border border-blue-900/50 rounded-xl sm:rounded-2xl p-3 sm:p-5">
+    <h2 class="text-xs sm:text-sm font-medium text-blue-400 mb-3">快速入门 — 五步开始 AI 自动交易</h2>
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2 text-xs mb-3 sm:mb-4">
+      <div class="bg-gray-800 rounded-xl p-3 text-center">
+        <div class="text-blue-400 font-bold text-base mb-1">1</div>
+        <div class="text-gray-300 font-medium mb-0.5">激活账户</div>
+        <div class="text-gray-600">填写 OKX 子账户 API Key（交易权限，无需提现）</div>
+      </div>
+      <div class="bg-gray-800 rounded-xl p-3 text-center">
+        <div class="text-blue-400 font-bold text-base mb-1">2</div>
+        <div class="text-gray-300 font-medium mb-0.5">新建策略</div>
+        <div class="text-gray-600">选择交易标的、决策周期，用自然语言描述交易逻辑</div>
+      </div>
+      <div class="bg-gray-800 rounded-xl p-3 text-center">
+        <div class="text-blue-400 font-bold text-base mb-1">3</div>
+        <div class="text-gray-300 font-medium mb-0.5">配置 AI</div>
+        <div class="text-gray-600">填写 AI 服务商 API Key（支持通义千问、DeepSeek 等）</div>
+      </div>
+      <div class="bg-gray-800 rounded-xl p-3 text-center">
+        <div class="text-blue-400 font-bold text-base mb-1">4</div>
+        <div class="text-gray-300 font-medium mb-0.5">激活策略</div>
+        <div class="text-gray-600">点击策略卡片的「激活」按钮，同时只能有一个激活策略</div>
+      </div>
+      <div class="bg-gray-800 rounded-xl p-3 text-center">
+        <div class="text-blue-400 font-bold text-base mb-1">5</div>
+        <div class="text-gray-300 font-medium mb-0.5">开启自动交易</div>
+        <div class="text-gray-600">在「控制台」点击「开启自动交易」，AI 开始自动分析并交易</div>
+      </div>
+    </div>
+    <div class="border-t border-gray-800 pt-3 grid grid-cols-2 gap-x-8 gap-y-1 text-xs text-gray-500">
+      <div><span class="text-gray-400">策略描述</span> — 用自然语言写明开仓/平仓条件，AI 会严格按照描述决策；点击新建策略页的模板按钮可快速填入示例</div>
+      <div><span class="text-gray-400">主决策周期</span> — AI 分析所用的 K 线时间粒度，1H 中线推荐新手；时间越短信号越多但噪音也越多</div>
+      <div><span class="text-gray-400">默认杠杆</span> — AI 开仓时使用的杠杆倍数；AI 杠杆上限限制 AI 动态调整的最高值</div>
+      <div><span class="text-gray-400">止损保险</span> — 平台内置双重止损：OKX 原生算法委托（主）+ 软件价格监控（备），全程保护</div>
+    </div>
+  </div>
+
+  {% if strategies %}
+  <div class="space-y-3 sm:space-y-4">
+    {% for s in strategies %}
+    <div class="bg-gray-900 border {% if s.is_active %}border-blue-600{% else %}border-gray-800{% endif %} rounded-xl sm:rounded-2xl p-4 sm:p-5">
+      <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-3 sm:gap-4">
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-2 sm:gap-3 mb-1">
+            <span class="font-medium text-sm sm:text-base text-gray-100 truncate">{{ s.name }}</span>
+            {% if s.is_active %}
+            <span class="text-xs bg-blue-600/30 text-blue-400 border border-blue-700 px-2 py-0.5 rounded-full whitespace-nowrap">激活中</span>
+            {% endif %}
+          </div>
+          <div class="text-xs sm:text-sm text-gray-500 flex flex-wrap gap-x-3 sm:gap-x-4 gap-y-1">
+            <span>{{ s.symbol }}</span>
+            <span>{{ s.timeframe }}</span>
+            <span>{{ s.default_leverage }}x · 上限 {{ s.max_leverage }}x</span>
+            <span>仓位 {{ s.max_position_pct }}%</span>
+            {% if s.enable_news_analysis %}
+            <span class="text-yellow-500">消息面</span>
+            {% endif %}
+          </div>
+          {% if s.nl_strategy %}
+          <div class="mt-2 text-xs text-gray-600 line-clamp-2 sm:truncate sm:max-w-xl">{{ s.nl_strategy[:120] }}{% if s.nl_strategy|length > 120 %}...{% endif %}</div>
+          {% endif %}
+        </div>
+
+        <div class="flex items-center gap-2 shrink-0">
+          {% if not s.is_active %}
+          <form action="/strategies/{{ s.id }}/activate" method="post">
+            <button type="submit" class="text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 px-3 py-1.5 rounded-lg transition-colors">激活</button>
+          </form>
+          {% endif %}
+          <a href="/strategies/{{ s.id }}/edit"
+            class="text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 px-3 py-1.5 rounded-lg transition-colors">编辑</a>
+          <form action="/strategies/{{ s.id }}/delete" method="post"
+            onsubmit="return confirm('确认删除策略「{{ s.name }}」？')">
+            <button type="submit" class="text-xs bg-gray-800 hover:bg-red-900 text-gray-500 hover:text-red-400 px-3 py-1.5 rounded-lg transition-colors">删除</button>
+          </form>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  {% else %}
+  <div class="bg-gray-900 border border-gray-800 rounded-2xl p-12 text-center">
+    <div class="text-gray-600 mb-4">还没有策略</div>
+    <a href="/strategies/new" class="text-blue-400 hover:text-blue-300 text-sm">创建第一个策略</a>
+  </div>
+  {% endif %}
+
+</div>
+
+{% endblock %}

@@ -1,0 +1,354 @@
+{% extends "base.html" %}
+{% block title %}账户管理 — AI OKX Trader{% endblock %}
+{% block content %}
+
+{% set success = request.query_params.get('success') %}
+{% set is_testnet = user_data.okx_testnet %}
+{% set has_live = user_data.okx_live_api_key %}
+
+<div class="max-w-3xl mx-auto" x-data="{ tab: 'testnet' }">
+  <div class="flex items-center justify-between mb-4 sm:mb-6">
+    <h1 class="text-lg sm:text-xl font-semibold text-gray-100">账户管理</h1>
+  </div>
+
+  <!-- Alerts -->
+  {% if success == 'testnet_updated' %}
+  <div class="mb-4 bg-green-900/30 border border-green-700 rounded-xl p-3 text-green-300 text-sm">✓ 模拟盘凭证已更新</div>
+  {% elif success == 'live_updated' %}
+  <div class="mb-4 bg-green-900/30 border border-green-700 rounded-xl p-3 text-green-300 text-sm">✓ 实盘凭证已更新</div>
+  {% elif success == 'mode_testnet' %}
+  <div class="mb-4 bg-blue-900/30 border border-blue-700 rounded-xl p-3 text-blue-300 text-sm">✓ 已切换到模拟盘模式</div>
+  {% elif success == 'mode_live' %}
+  <div class="mb-4 bg-yellow-900/30 border border-yellow-700 rounded-xl p-3 text-yellow-300 text-sm">✓ 已切换到实盘模式，请注意资金安全</div>
+  {% endif %}
+  {% if error %}
+  <div class="mb-4 bg-red-900/30 border border-red-700 rounded-xl p-3 text-red-300 text-sm">{{ error }}</div>
+  {% endif %}
+
+  <!-- Mode Banner -->
+  <div class="mb-4 rounded-xl border overflow-hidden
+    {% if is_testnet %}bg-blue-950/40 border-blue-800/60{% else %}bg-yellow-950/40 border-yellow-700/60{% endif %}"
+    x-data="{ switching: false }">
+    <div class="px-4 py-3 flex items-center justify-between gap-3">
+      <div class="flex items-center gap-3">
+        <div class="flex-shrink-0 w-2 h-2 rounded-full {% if is_testnet %}bg-blue-400{% else %}bg-yellow-400{% endif %} ring-2 {% if is_testnet %}ring-blue-400/30{% else %}ring-yellow-400/30{% endif %}"></div>
+        <div>
+          <p class="text-sm font-semibold {% if is_testnet %}text-blue-200{% else %}text-yellow-200{% endif %}">
+            {% if is_testnet %}模拟盘模式{% else %}实盘模式{% endif %}
+          </p>
+          <p class="text-xs {% if is_testnet %}text-blue-400/70{% else %}text-yellow-400/70{% endif %}">
+            {% if is_testnet %}无真实资金风险{% else %}使用真实资金交易{% endif %}
+          </p>
+        </div>
+      </div>
+      <div x-show="!switching">
+        {% if is_testnet %}
+        <button @click="switching=true; $nextTick(() => $refs.switchTarget.value='live')"
+          class="text-xs px-4 py-2 rounded-lg font-medium transition-colors
+            {% if has_live %}bg-yellow-700 hover:bg-yellow-600 text-white{% else %}bg-gray-700 text-gray-500 cursor-not-allowed{% endif %}"
+          {% if not has_live %}disabled title="请先在下方配置实盘 API Key"{% endif %}>
+          切换到实盘
+        </button>
+        {% else %}
+        <button @click="switching=true; $nextTick(() => $refs.switchTarget.value='testnet')"
+          class="text-xs px-4 py-2 bg-blue-700 hover:bg-blue-600 text-white rounded-lg font-medium transition-colors">
+          切换到模拟盘
+        </button>
+        {% endif %}
+      </div>
+      <form x-show="switching" x-cloak action="/account/switch-mode" method="post" class="flex items-center gap-2">
+        <input type="hidden" name="mode" x-ref="switchTarget">
+        <input type="text" name="totp_token" required maxlength="6" pattern="[0-9]{6}"
+          class="w-28 px-2 py-1.5 bg-gray-900 border border-gray-600 rounded-lg text-gray-100 font-mono text-center tracking-widest text-sm focus:outline-none"
+          placeholder="TOTP" autocomplete="off" autofocus>
+        <button type="submit" class="text-xs px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors">确认</button>
+        <button type="button" @click="switching=false" class="text-xs px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg transition-colors">取消</button>
+      </form>
+    </div>
+    {% if is_testnet and not has_live %}
+    <div class="px-4 py-2 border-t {% if is_testnet %}border-blue-800/40 bg-blue-950/30{% else %}border-yellow-800/40{% endif %}">
+      <p class="text-xs text-gray-500">切换实盘需先在下方「实盘 API Key」标签配置凭证</p>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Account Info -->
+  <div class="bg-gray-900 border border-gray-800 rounded-xl sm:rounded-2xl px-4 sm:px-6 py-3 mb-4">
+    <div class="flex items-center gap-3 text-xs sm:text-sm">
+      <span class="text-gray-500">账户 ID</span>
+      <span class="text-gray-300 font-mono truncate">{{ user.unique_id }}</span>
+    </div>
+  </div>
+
+  <!-- Credits Panel -->
+  <div class="bg-gray-900 border border-gray-800 rounded-xl sm:rounded-2xl overflow-hidden mb-4"
+       x-data="creditsApp()" x-init="init()">
+    <div class="px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <span class="text-sm font-medium text-gray-200">积分 &amp; 计划</span>
+        <span :class="credits < 0 ? 'bg-red-900/40 text-red-400 border-red-800' : 'bg-green-900/30 text-green-400 border-green-800'"
+              class="text-xs px-2 py-0.5 rounded border font-mono"
+              x-text="credits + ' 积分'">
+          {{ credit_info.credits_balance }} 积分
+        </span>
+      </div>
+      <button @click="showTx=!showTx"
+        class="text-xs text-gray-500 hover:text-gray-300 transition-colors"
+        x-text="showTx ? '收起记录' : '查看消耗记录'">查看消耗记录</button>
+    </div>
+
+    <!-- Balance + Expiry row -->
+    <div class="px-4 sm:px-6 pb-3 flex flex-wrap gap-x-6 gap-y-1 text-xs text-gray-500">
+      {% if credit_info.plan_expires_at %}
+      <span>有效期至 <span class="text-gray-300 font-mono">{{ credit_info.plan_expires_at[:10] }}</span></span>
+      {% else %}
+      <span class="text-red-400">未购买订阅，AI决策已暂停</span>
+      {% endif %}
+      {% if credit_info.credits_balance < 0 %}
+      <span class="text-red-400 font-medium">⚠️ 积分透支中，请尽快充值</span>
+      {% endif %}
+    </div>
+
+    <!-- Transaction History -->
+    <div x-show="showTx" x-cloak class="border-t border-gray-800">
+      <div class="px-4 sm:px-6 py-2 text-xs text-gray-600 flex items-center justify-between">
+        <span>最近20条消耗记录</span>
+        <button @click="refresh()" class="text-blue-500 hover:text-blue-400 transition-colors">刷新</button>
+      </div>
+      <div class="divide-y divide-gray-800/60 max-h-72 overflow-y-auto">
+        <template x-for="tx in transactions" :key="tx.created_at">
+          <div class="px-4 sm:px-6 py-2 flex items-center justify-between gap-3 text-xs">
+            <div class="min-w-0">
+              <div class="text-gray-400 truncate" x-text="tx.note || '—'"></div>
+              <div class="text-gray-600 font-mono" x-text="tx.created_at ? tx.created_at.slice(0,19).replace('T',' ') : ''"></div>
+            </div>
+            <div class="shrink-0 text-right">
+              <div :class="tx.amount < 0 ? 'text-red-400' : 'text-green-400'" class="font-mono font-medium"
+                   x-text="(tx.amount > 0 ? '+' : '') + tx.amount"></div>
+              <div class="text-gray-600 font-mono" x-text="'余 ' + tx.balance_after"></div>
+            </div>
+          </div>
+        </template>
+        <div x-show="transactions.length === 0" class="px-4 py-4 text-xs text-gray-600 text-center">暂无消耗记录</div>
+      </div>
+      <div x-show="hasMore || loading" class="px-4 py-2 border-t border-gray-800 text-center">
+        <button @click="loadMore()" :disabled="loading"
+          class="text-xs text-blue-500 hover:text-blue-400 disabled:opacity-50 transition-colors"
+          x-text="loading ? '加载中...' : '加载更多'">加载更多</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Credential Tabs -->
+  <div class="bg-gray-900 border border-gray-800 rounded-xl sm:rounded-2xl overflow-hidden">
+    <!-- Tab Headers -->
+    <div class="flex border-b border-gray-800">
+      <button @click="tab='testnet'"
+        :class="tab==='testnet' ? 'border-b-2 border-blue-500 text-blue-300 bg-gray-800/40' : 'text-gray-500 hover:text-gray-300'"
+        class="flex-1 py-3 text-xs sm:text-sm font-medium transition-colors">
+        模拟盘 API Key
+      </button>
+      <button @click="tab='live'"
+        :class="tab==='live' ? 'border-b-2 border-yellow-500 text-yellow-300 bg-gray-800/40' : 'text-gray-500 hover:text-gray-300'"
+        class="flex-1 py-3 text-xs sm:text-sm font-medium transition-colors">
+        实盘 API Key
+        {% if not has_live %}<span class="ml-1 text-xs text-gray-600">（未配置）</span>{% endif %}
+      </button>
+    </div>
+
+    <!-- Testnet Tab -->
+    <div x-show="tab==='testnet'" class="p-4 sm:p-6" x-data="{ showForm: false }">
+      <div class="flex items-start justify-between mb-3 gap-3">
+        <div>
+          <p class="text-sm text-gray-300">模拟盘凭证</p>
+          <p class="text-xs text-gray-500 mt-0.5">OKX 模拟盘账户，无真实资金风险</p>
+        </div>
+        <button @click="showForm=!showForm"
+          :class="showForm ? 'bg-gray-700 text-gray-300' : 'bg-blue-600 hover:bg-blue-500 text-white'"
+          class="text-xs px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap"
+          x-text="showForm ? '取消' : '更新'">
+        </button>
+      </div>
+      <div x-show="!showForm" class="text-xs text-gray-500">
+        <p>API Key 已加密存储。在 OKX App 模拟交易页面申请。</p>
+      </div>
+      <form x-show="showForm" x-cloak action="/account/update-testnet" method="post" class="space-y-3 mt-3">
+        <div>
+          <label class="block text-xs text-gray-400 mb-1">API Key</label>
+          <input type="text" name="okx_api_key" required
+            class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-100 focus:outline-none focus:border-blue-500"
+            placeholder="模拟盘 API Key">
+        </div>
+        <div>
+          <label class="block text-xs text-gray-400 mb-1">Secret Key</label>
+          <input type="password" name="okx_secret_key" required
+            class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-100 focus:outline-none focus:border-blue-500"
+            placeholder="模拟盘 Secret Key">
+        </div>
+        <div>
+          <label class="block text-xs text-gray-400 mb-1">Passphrase</label>
+          <input type="password" name="okx_passphrase" required
+            class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-100 focus:outline-none focus:border-blue-500"
+            placeholder="Passphrase">
+        </div>
+        <div class="border-t border-gray-800 pt-3">
+          <label class="block text-xs text-gray-400 mb-1">TOTP 验证码</label>
+          <input type="text" name="totp_token" required pattern="[0-9]{6}" maxlength="6"
+            class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-100 font-mono text-center tracking-widest text-base focus:outline-none focus:border-blue-500"
+            placeholder="000000" autocomplete="off">
+        </div>
+        <button type="submit" class="w-full py-2.5 bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium rounded-lg transition-colors">
+          更新模拟盘凭证
+        </button>
+      </form>
+    </div>
+
+    <!-- Live Tab -->
+    <div x-show="tab==='live'" class="p-4 sm:p-6" x-data="{ showForm: false }">
+      <div class="flex items-start justify-between mb-3 gap-3">
+        <div>
+          <p class="text-sm text-gray-300">实盘凭证</p>
+          <p class="text-xs text-gray-500 mt-0.5">真实资金，请仅开启交易权限</p>
+        </div>
+        <button @click="showForm=!showForm"
+          :class="showForm ? 'bg-gray-700 text-gray-300' : 'bg-yellow-700 hover:bg-yellow-600 text-white'"
+          class="text-xs px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap"
+          x-text="showForm ? '取消' : '{% if has_live %}更新{% else %}配置{% endif %}'">
+        </button>
+      </div>
+      {% if not has_live %}
+      <div x-show="!showForm" class="text-xs text-gray-600 bg-gray-800/50 rounded-lg p-3 border border-dashed border-gray-700">
+        尚未配置实盘 API Key，配置后可切换到实盘模式。
+      </div>
+      {% else %}
+      <div x-show="!showForm" class="text-xs text-gray-500">
+        实盘 API Key 已加密存储。
+      </div>
+      {% endif %}
+      <form x-show="showForm" x-cloak action="/account/update-live" method="post" class="space-y-3 mt-3">
+        <div class="bg-yellow-900/20 border border-yellow-800/50 rounded-lg p-3 text-xs text-yellow-400/80">
+          仅需交易权限，禁止开启提现权限。更新后需重启引擎才能生效。
+        </div>
+        <div>
+          <label class="block text-xs text-gray-400 mb-1">API Key</label>
+          <input type="text" name="okx_live_api_key" required
+            class="w-full px-3 py-2 bg-gray-800 border border-yellow-900/50 rounded-lg text-sm text-gray-100 focus:outline-none focus:border-yellow-500"
+            placeholder="实盘 API Key">
+        </div>
+        <div>
+          <label class="block text-xs text-gray-400 mb-1">Secret Key</label>
+          <input type="password" name="okx_live_secret_key" required
+            class="w-full px-3 py-2 bg-gray-800 border border-yellow-900/50 rounded-lg text-sm text-gray-100 focus:outline-none focus:border-yellow-500"
+            placeholder="实盘 Secret Key">
+        </div>
+        <div>
+          <label class="block text-xs text-gray-400 mb-1">Passphrase</label>
+          <input type="password" name="okx_live_passphrase" required
+            class="w-full px-3 py-2 bg-gray-800 border border-yellow-900/50 rounded-lg text-sm text-gray-100 focus:outline-none focus:border-yellow-500"
+            placeholder="Passphrase">
+        </div>
+        <div class="border-t border-gray-800 pt-3">
+          <label class="block text-xs text-gray-400 mb-1">TOTP 验证码</label>
+          <input type="text" name="totp_token" required pattern="[0-9]{6}" maxlength="6"
+            class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-100 font-mono text-center tracking-widest text-base focus:outline-none focus:border-yellow-500"
+            placeholder="000000" autocomplete="off">
+        </div>
+        <button type="submit" class="w-full py-2.5 bg-yellow-600 hover:bg-yellow-500 text-white text-sm font-medium rounded-lg transition-colors">
+          {% if has_live %}更新{% else %}保存{% endif %}实盘凭证
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Notification Config -->
+  {% if success == 'notify_updated' %}
+  <div class="mt-4 bg-green-900/30 border border-green-700 rounded-xl p-3 text-green-300 text-sm">通知配置已保存</div>
+  {% endif %}
+  <div class="mt-4 bg-gray-900 border border-gray-800 rounded-xl sm:rounded-2xl overflow-hidden" x-data="{ showNotify: false }">
+    <button @click="showNotify=!showNotify"
+      class="w-full flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 text-left hover:bg-gray-800/40 transition-colors">
+      <div class="flex items-center gap-2">
+        <span class="text-sm font-medium text-gray-200">Webhook 通知</span>
+        {% if user_data.notify_webhook %}
+        <span class="text-xs px-2 py-0.5 bg-green-900/40 text-green-400 border border-green-800 rounded">已启用</span>
+        {% else %}
+        <span class="text-xs px-2 py-0.5 bg-gray-800 text-gray-500 border border-gray-700 rounded">未配置</span>
+        {% endif %}
+      </div>
+      <svg :class="showNotify ? 'rotate-180' : ''" class="w-4 h-4 text-gray-500 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+      </svg>
+    </button>
+    <div x-show="showNotify" x-cloak class="px-4 sm:px-6 pb-5 border-t border-gray-800 pt-4">
+      <p class="text-xs text-gray-500 mb-4">开仓、平仓、强平警报、引擎异常时自动推送消息。支持钉钉、企业微信、飞书机器人 Webhook。</p>
+      <form action="/account/update-notify" method="post" class="space-y-3">
+        <div>
+          <label class="block text-xs text-gray-400 mb-1">通知渠道</label>
+          <select name="notify_provider"
+            class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-100 focus:outline-none focus:border-blue-500">
+            <option value="dingtalk" {% if user_data.notify_provider == 'dingtalk' or not user_data.notify_provider %}selected{% endif %}>🔔 钉钉（DingTalk）</option>
+            <option value="wecom" {% if user_data.notify_provider == 'wecom' %}selected{% endif %}>💬 企业微信（WeCom）</option>
+            <option value="feishu" {% if user_data.notify_provider == 'feishu' %}selected{% endif %}>🪁 飞书（Feishu）</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs text-gray-400 mb-1">Webhook URL</label>
+          <input type="url" name="notify_webhook"
+            value="{{ user_data.notify_webhook or '' }}"
+            class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-100 focus:outline-none focus:border-blue-500"
+            placeholder="https://oapi.dingtalk.com/robot/send?access_token=...">
+          <p class="text-xs text-gray-600 mt-1">留空则关闭通知</p>
+        </div>
+        <div class="bg-gray-800/60 rounded-lg p-3 text-xs text-gray-500">
+          通知事件：开仓 / 平仓（含盈亏） / 强平警报 / 引擎异常
+        </div>
+        <button type="submit" class="w-full py-2 bg-gray-700 hover:bg-gray-600 text-gray-200 text-sm font-medium rounded-lg transition-colors">
+          保存通知配置
+        </button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+function creditsApp() {
+  return {
+    credits: {{ credit_info.credits_balance | tojson }},
+    transactions: {{ credit_info.transactions | tojson }},
+    hasMore: {{ credit_info.has_more | tojson }},
+    offset: {{ credit_info.transactions | length }},
+    showTx: false,
+    loading: false,
+
+    init() {},
+
+    async refresh() {
+      this.loading = true;
+      try {
+        const r = await fetch('/api/credits/history?offset=0');
+        const d = await r.json();
+        this.credits = d.credits_balance;
+        this.transactions = d.transactions;
+        this.hasMore = d.has_more;
+        this.offset = d.transactions.length;
+      } catch(_) {}
+      this.loading = false;
+    },
+
+    async loadMore() {
+      if (this.loading || !this.hasMore) return;
+      this.loading = true;
+      try {
+        const r = await fetch('/api/credits/history?offset=' + this.offset);
+        const d = await r.json();
+        this.transactions = this.transactions.concat(d.transactions);
+        this.hasMore = d.has_more;
+        this.offset += d.transactions.length;
+      } catch(_) {}
+      this.loading = false;
+    },
+  };
+}
+</script>
+
+{% endblock %}

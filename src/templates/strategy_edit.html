@@ -1,0 +1,250 @@
+{% extends "base.html" %}
+{% block title %}{% if strategy %}编辑策略{% else %}新建策略{% endif %} — AI OKX Trader{% endblock %}
+{% block content %}
+
+<script>
+document.addEventListener('alpine:init', () => {
+  Alpine.data('strategyForm', () => ({
+    newsEnabled: {{ (strategy.enable_news_analysis if strategy else false) | tojson }},
+    symbolQuery: '{{ strategy.symbol if strategy else "BTC-USDT-SWAP" }}',
+    symbolOpen: false,
+    symbols: [
+      'BTC-USDT-SWAP','ETH-USDT-SWAP','SOL-USDT-SWAP','BNB-USDT-SWAP',
+      'XRP-USDT-SWAP','DOGE-USDT-SWAP','ADA-USDT-SWAP','AVAX-USDT-SWAP',
+      'DOT-USDT-SWAP','LINK-USDT-SWAP','LTC-USDT-SWAP','BCH-USDT-SWAP',
+      'ATOM-USDT-SWAP','UNI-USDT-SWAP','NEAR-USDT-SWAP','APT-USDT-SWAP',
+      'ARB-USDT-SWAP','OP-USDT-SWAP','SUI-USDT-SWAP','TON-USDT-SWAP',
+      'TRX-USDT-SWAP','INJ-USDT-SWAP','WLD-USDT-SWAP','SEI-USDT-SWAP',
+      'FIL-USDT-SWAP','STX-USDT-SWAP','MATIC-USDT-SWAP','FTM-USDT-SWAP',
+      'PEPE-USDT-SWAP','SHIB-USDT-SWAP','ETC-USDT-SWAP','SAND-USDT-SWAP',
+    ],
+    get filteredSymbols() {
+      const q = this.symbolQuery.toUpperCase();
+      if (!q) return this.symbols;
+      return this.symbols.filter(s => s.includes(q));
+    },
+    selectSymbol(sym) {
+      this.symbolQuery = sym;
+      this.symbolOpen = false;
+    },
+    setTemplate(type) {
+      const tpls = {
+        // ── AI自主型（适合新手，用自然语言描述风格，让AI自行判断）──
+        aggressive: `你是一名激进型AI交易员，风险偏好极高。看到明确的趋势信号时，果断满仓杀入，最大化利润。宁可止损出局也不错过大行情。仓位可以用到账户余额的80%以上，杠杆选择适当放大。遇到亏损要快速止损，不拖泥带水，及时换方向。`,
+        conservative: `你是一名稳健保守型AI交易员，以资金安全为第一优先。只在信号非常明确时才入场，仓位控制在账户余额30%以内，杠杆不超过5倍。宁可少赚也不冒险，市场不明朗时坚决空仓等待。每笔交易止损严格不超过入场价的1.5%。`,
+        balanced: `你是一名均衡型AI交易员，追求稳定盈利。根据当前市场波动性灵活调整仓位，波动大时减小仓位（20~30%），波动小时适当加仓（40~50%）。顺势交易为主，逆势时只做轻仓试探。每笔交易设置明确的止盈止损，盈亏比不低于2:1。`,
+        scalping: `你是一名短线刷单型AI交易员，专注于快进快出。利用价格的短期波动获利，每次交易目标盈利0.5%~1%，止损不超过0.5%。仓位使用账户的50%，杠杆可以用到10~20倍。不追求大行情，积小胜为大胜。行情快速反向时立刻平仓。`,
+        // ── 专业策略型（适合有经验的交易者，包含具体技术指标逻辑）──
+        trend: `趋势跟踪策略：当RSI(14)低于35且MACD出现金叉（MACD线上穿信号线）且价格站上EMA(200)时做多，止损设在入场价2%以下，止盈目标入场价4%以上；当RSI(14)高于70且MACD出现死叉且价格跌破EMA(200)时做空，止损设在入场价2%以上。仅在趋势明确时入场，震荡行情保持空仓。`,
+        reversion: `布林带均值回归策略：当价格跌破布林带下轨（BBL）且RSI(14)<28时做多，目标布林带中轨，止损在布林带下轨再下方1.5%；当价格突破布林带上轨（BBU）且RSI(14)>72时做空，目标布林带中轨，止损在布林带上轨再上方1.5%。仅适用于震荡行情，ADX<25时使用，趋势行情（ADX>30）停止该策略。`,
+        breakout: `成交量突破追涨策略：当价格以超过20周期均量200%的成交量向上突破近20根K线最高价（N字形突破），且ATR(14)处于近期高位时做多，止损设在突破K线实体低点；当价格以同等条件向下突破近20根K线最低价时做空。必须等待K线收盘确认，拒绝追高追低。突破后回踩不破时加仓。`,
+        momentum: `多重EMA+RSI动量策略：当EMA(9)上穿EMA(21)且EMA(21)上穿EMA(55)（三线多头排列）且RSI(14)在50~65区间（未超买）时做多，止损设在EMA(21)下方0.8%，首次止盈在入场价3%，剩余仓位移动止损；当三线空头排列且RSI在35~50区间时做空，同样逻辑。动能衰竭（MACD柱缩短）时提前减仓。`,
+        grid: `波段网格策略：以布林带中轨为价值中枢，在中轨上方1%~3%区间分三批做空（每批20%仓位），在中轨下方1%~3%区间分三批做多。每批间隔1%。止损设在布林带外侧3%处。单边行情启动时（ATR扩大超过20%）立即清空所有网格仓位。资金费率为负时优先做多，为正时优先做空。`,
+      };
+      this.$refs.nl_strategy.value = tpls[type] || '';
+    },
+  }));
+});
+</script>
+
+<div class="max-w-2xl mx-auto" x-data="strategyForm()">
+
+  <div class="flex items-center gap-3 mb-6">
+    <a href="/strategies" class="text-gray-500 hover:text-gray-300 text-sm">← 策略列表</a>
+    <span class="text-gray-700">/</span>
+    <h1 class="text-xl font-semibold text-gray-100">{% if strategy %}编辑策略{% else %}新建策略{% endif %}</h1>
+  </div>
+
+  <form action="{{ action }}" method="post" class="space-y-6">
+
+    <!-- Basic Info -->
+    <div class="bg-gray-900 border border-gray-800 rounded-2xl p-6 space-y-4">
+      <h2 class="text-sm font-medium text-gray-400 uppercase tracking-wide">基本配置</h2>
+
+      <div>
+        <label class="block text-sm text-gray-400 mb-1">策略名称</label>
+        <input type="text" name="name" required value="{{ strategy.name if strategy else '' }}"
+          placeholder="例：BTC趋势跟踪、ETH震荡套利、SOL突破策略"
+          class="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-gray-100 placeholder-gray-600 focus:outline-none focus:border-blue-500 text-sm" />
+        <p class="text-xs text-gray-600 mt-1">建议包含标的名称和策略类型，便于区分多个策略。</p>
+      </div>
+
+      <div class="grid grid-cols-2 gap-4">
+
+        <!-- Symbol Searchable Dropdown -->
+        <div class="relative" @click.outside="symbolOpen=false">
+          <label class="block text-sm text-gray-400 mb-1">交易标的</label>
+          <input type="text" name="symbol" x-model="symbolQuery"
+            @focus="symbolOpen=true" @input="symbolOpen=true"
+            placeholder="搜索合约，如 BTC" autocomplete="off"
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-gray-100 placeholder-gray-600 focus:outline-none focus:border-blue-500 text-sm font-mono" />
+          <div x-show="symbolOpen && filteredSymbols.length > 0" x-cloak
+            class="absolute z-50 w-full mt-1 bg-gray-800 border border-gray-700 rounded-lg shadow-xl max-h-52 overflow-y-auto">
+            <template x-for="sym in filteredSymbols" :key="sym">
+              <div @click="selectSymbol(sym)"
+                class="px-4 py-2 text-sm font-mono cursor-pointer hover:bg-gray-700"
+                :class="sym === symbolQuery ? 'text-blue-400' : 'text-gray-200'"
+                x-text="sym"></div>
+            </template>
+          </div>
+          <p class="text-xs text-gray-600 mt-1">仅支持永续合约（SWAP）。输入币种名称搜索，或直接输入完整合约代码。</p>
+        </div>
+
+        <!-- Timeframe -->
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">主决策周期
+            <span class="text-gray-600 font-normal">（K 线周期）</span>
+          </label>
+          <select name="timeframe"
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-gray-100 focus:outline-none focus:border-blue-500 text-sm">
+            {% set cur_tf = strategy.timeframe if strategy else '15m' %}
+            <option value="5m"  {% if cur_tf == '5m'  %}selected{% endif %}>5m — 超短线（噪音多）</option>
+            <option value="15m" {% if cur_tf == '15m' %}selected{% endif %}>15m — 短线（适合日内）</option>
+            <option value="30m" {% if cur_tf == '30m' %}selected{% endif %}>30m — 中短线</option>
+            <option value="1H"  {% if cur_tf == '1H'  %}selected{% endif %}>1H — 中线（推荐）</option>
+            <option value="4H"  {% if cur_tf == '4H'  %}selected{% endif %}>4H — 波段</option>
+          </select>
+          <p class="text-xs text-gray-600 mt-1">AI 以此周期的 K 线数据作为主要分析依据。</p>
+        </div>
+
+      </div>
+
+      <!-- Strategy Description -->
+      <div>
+        <div class="mb-2">
+          <label class="text-sm text-gray-400">策略描述
+            <span class="text-gray-600 font-normal">（自然语言，直接注入 AI Prompt）</span>
+          </label>
+          <div class="mt-2 space-y-1.5">
+            <div class="flex items-center gap-1.5 flex-wrap">
+              <span class="text-xs text-purple-400 font-medium mr-0.5">🤖 AI自主型</span>
+              <button type="button" @click="setTemplate('aggressive')"
+                class="text-xs px-2 py-1 bg-gray-800 hover:bg-purple-900 border border-gray-700 hover:border-purple-700 text-gray-500 hover:text-purple-300 rounded transition-colors">激进满仓</button>
+              <button type="button" @click="setTemplate('conservative')"
+                class="text-xs px-2 py-1 bg-gray-800 hover:bg-purple-900 border border-gray-700 hover:border-purple-700 text-gray-500 hover:text-purple-300 rounded transition-colors">稳健保守</button>
+              <button type="button" @click="setTemplate('balanced')"
+                class="text-xs px-2 py-1 bg-gray-800 hover:bg-purple-900 border border-gray-700 hover:border-purple-700 text-gray-500 hover:text-purple-300 rounded transition-colors">平衡均衡</button>
+              <button type="button" @click="setTemplate('scalping')"
+                class="text-xs px-2 py-1 bg-gray-800 hover:bg-purple-900 border border-gray-700 hover:border-purple-700 text-gray-500 hover:text-purple-300 rounded transition-colors">短线刷单</button>
+            </div>
+            <div class="flex items-center gap-1.5 flex-wrap">
+              <span class="text-xs text-blue-400 font-medium mr-0.5">📊 专业策略型</span>
+              <button type="button" @click="setTemplate('trend')"
+                class="text-xs px-2 py-1 bg-gray-800 hover:bg-blue-900 border border-gray-700 hover:border-blue-700 text-gray-500 hover:text-blue-300 rounded transition-colors">趋势跟踪</button>
+              <button type="button" @click="setTemplate('reversion')"
+                class="text-xs px-2 py-1 bg-gray-800 hover:bg-blue-900 border border-gray-700 hover:border-blue-700 text-gray-500 hover:text-blue-300 rounded transition-colors">均值回归</button>
+              <button type="button" @click="setTemplate('breakout')"
+                class="text-xs px-2 py-1 bg-gray-800 hover:bg-blue-900 border border-gray-700 hover:border-blue-700 text-gray-500 hover:text-blue-300 rounded transition-colors">突破追涨</button>
+              <button type="button" @click="setTemplate('momentum')"
+                class="text-xs px-2 py-1 bg-gray-800 hover:bg-blue-900 border border-gray-700 hover:border-blue-700 text-gray-500 hover:text-blue-300 rounded transition-colors">多指标动量</button>
+              <button type="button" @click="setTemplate('grid')"
+                class="text-xs px-2 py-1 bg-gray-800 hover:bg-blue-900 border border-gray-700 hover:border-blue-700 text-gray-500 hover:text-blue-300 rounded transition-colors">波段网格</button>
+            </div>
+          </div>
+        </div>
+        <textarea name="nl_strategy" rows="6" x-ref="nl_strategy"
+          placeholder="描述你的交易逻辑，例如：当 RSI < 30 且 MACD 金叉时做多，当 RSI > 70 且 MACD 死叉时做空..."
+          class="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-gray-100 placeholder-gray-600 focus:outline-none focus:border-blue-500 text-sm resize-none">{{ strategy.nl_strategy if strategy else '' }}</textarea>
+        <p class="text-xs text-gray-600 mt-1">点击右侧模板快速填入示例，可在此基础上自行修改。描述越清晰，AI 决策越准确。</p>
+      </div>
+    </div>
+
+    <!-- Trading Params -->
+    <div class="bg-gray-900 border border-gray-800 rounded-2xl p-6 space-y-4">
+      <h2 class="text-sm font-medium text-gray-400 uppercase tracking-wide">交易参数</h2>
+
+      <div class="grid grid-cols-3 gap-4">
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">默认杠杆 (x)</label>
+          <input type="number" name="default_leverage" min="1" max="125"
+            value="{{ strategy.default_leverage if strategy else 10 }}"
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-gray-100 focus:outline-none focus:border-blue-500 text-sm" />
+        </div>
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">AI 杠杆上限 (x)</label>
+          <input type="number" name="max_leverage" min="1" max="125"
+            value="{{ strategy.max_leverage if strategy else 20 }}"
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-gray-100 focus:outline-none focus:border-blue-500 text-sm" />
+        </div>
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">默认仓位 (%)</label>
+          <input type="number" name="position_size_pct" min="1" max="100" step="0.1"
+            value="{{ strategy.position_size_pct if strategy else 30 }}"
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-gray-100 focus:outline-none focus:border-blue-500 text-sm" />
+        </div>
+      </div>
+      <p class="text-xs text-gray-600">保证金模式固定为逐仓（isolated），不可修改。</p>
+    </div>
+
+    <!-- AI Config -->
+    <div class="bg-gray-900 border border-gray-800 rounded-2xl p-6 space-y-4">
+      <h2 class="text-sm font-medium text-gray-400 uppercase tracking-wide">AI 模型选择</h2>
+      
+      <div>
+        <label class="block text-sm text-gray-400 mb-2">选择 AI 服务商</label>
+        <select name="ai_provider"
+          class="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-gray-100 focus:outline-none focus:border-blue-500 text-sm">
+          {% set cur_provider = strategy.ai_provider if strategy else 'openai' %}
+          <option value="openai" {% if cur_provider == 'openai' %}selected{% endif %}>OpenAI (gpt-4o)</option>
+          <option value="qwen" {% if cur_provider == 'qwen' %}selected{% endif %}>通义千问 (qwen2.5-72b-instruct)</option>
+          <option value="doubao" {% if cur_provider == 'doubao' %}selected{% endif %}>豆包 (doubao-seed-1-8-251228)</option>
+        </select>
+        <p class="text-xs text-gray-600 mt-2">
+          <span class="text-yellow-400">💡 提示：</span>所有 AI 服务由系统统一配置，无需填写 API Key。
+        </p>
+      </div>
+    </div>
+
+    <!-- Risk Control -->
+    <div class="bg-gray-900 border border-gray-800 rounded-2xl p-6 space-y-4">
+      <h2 class="text-sm font-medium text-gray-400 uppercase tracking-wide">风控参数</h2>
+      <p class="text-xs text-gray-600">以下参数为软性配置，平台硬编码止损双保险和强平价监控不受此约束。</p>
+
+      <div class="grid grid-cols-3 gap-4">
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">日最大亏损 (%)</label>
+          <input type="number" name="max_daily_loss_pct" min="0.1" max="100" step="0.1"
+            value="{{ strategy.max_daily_loss_pct if strategy else 5.0 }}"
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-gray-100 focus:outline-none focus:border-blue-500 text-sm" />
+        </div>
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">连续亏损冷却 (次)</label>
+          <input type="number" name="max_consecutive_losses" min="1" max="20"
+            value="{{ strategy.max_consecutive_losses if strategy else 3 }}"
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-gray-100 focus:outline-none focus:border-blue-500 text-sm" />
+        </div>
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">最大仓位 (%)</label>
+          <input type="number" name="max_position_pct" min="1" max="100"
+            value="{{ strategy.max_position_pct if strategy else 50 }}"
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-gray-100 focus:outline-none focus:border-blue-500 text-sm" />
+        </div>
+      </div>
+
+      <div class="flex items-center gap-3 pt-1">
+        <input type="checkbox" name="enable_news_analysis" id="news_toggle" value="true"
+          x-model="newsEnabled"
+          {% if strategy and strategy.enable_news_analysis %}checked{% endif %}
+          class="w-4 h-4 accent-yellow-500 cursor-pointer" />
+        <label for="news_toggle" class="text-sm text-gray-400 cursor-pointer">
+          启用消息面分析 <span class="text-gray-600">（律动 BlockBeats 快讯，P4 功能）</span>
+        </label>
+      </div>
+    </div>
+
+    <!-- Submit -->
+    <div class="flex gap-3">
+      <button type="submit"
+        class="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-medium py-2.5 rounded-lg transition-colors text-sm">
+        {% if strategy %}保存修改{% else %}创建策略{% endif %}
+      </button>
+      <a href="/strategies"
+        class="px-6 bg-gray-800 hover:bg-gray-700 text-gray-300 font-medium py-2.5 rounded-lg transition-colors text-sm text-center">
+        取消
+      </a>
+    </div>
+
+  </form>
+</div>
+
+{% endblock %}
