@@ -4,7 +4,7 @@ from fastapi.templating import Jinja2Templates
 
 from src.auth.jwt import get_current_user
 from src.db.supabase_client import get_strategy_repo, get_user_repo
-from src.db.redis_client import is_engine_running, get_position, get_ai_plan
+from src.db.redis_client import is_engine_running, get_position, get_ai_plan, get_balance
 
 router = APIRouter()
 templates = Jinja2Templates(directory="src/templates")
@@ -111,6 +111,13 @@ async def api_ticker(request: Request, user: dict = Depends(require_auth)):
             pass
 
     return JSONResponse({"price": price, "symbol": symbol})
+
+
+@router.get("/api/balance")
+async def api_balance(request: Request, user: dict = Depends(require_auth)):
+    """Return cached account balance from Redis (updated on each AI tick)."""
+    balance = await get_balance(user["user_id"])
+    return JSONResponse(balance or {})
 
 
 @router.post("/position/close")

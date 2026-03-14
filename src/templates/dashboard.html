@@ -102,6 +102,21 @@
     {% endif %}
   </div>
 
+  <!-- Account Balance Bar -->
+  <div class="bg-gray-900 border border-gray-800 rounded-xl px-4 py-2.5 flex items-center gap-4 text-xs">
+    <span class="text-gray-500 shrink-0">账户余额</span>
+    <template x-if="balance.equity != null">
+      <div class="flex items-center gap-4 flex-wrap">
+        <span class="text-gray-300">权益 <span class="font-mono text-white" x-text="parseFloat(balance.equity).toFixed(2) + ' USDT'"></span></span>
+        <span class="text-gray-500">可用 <span class="font-mono text-gray-300" x-text="parseFloat(balance.available).toFixed(2) + ' USDT'"></span></span>
+        <span class="text-gray-700 font-mono" x-text="balance.updated_at ? '更新 ' + (d => isNaN(d) ? '' : d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'}))(new Date(balance.updated_at)) : ''"></span>
+      </div>
+    </template>
+    <template x-if="balance.equity == null">
+      <span class="text-gray-700">引擎运行后自动更新</span>
+    </template>
+  </div>
+
   <!-- Real-time Log Panel -->
   <div class="bg-gray-900 border border-gray-800 rounded-xl sm:rounded-2xl overflow-hidden">
     <div class="flex items-center justify-between px-3 sm:px-5 py-2.5 sm:py-3 border-b border-gray-800">
@@ -148,8 +163,10 @@ function dashboardApp() {
     pos: {{ position | tojson if position else '{}' }},
     plan: {{ ai_plan | tojson if ai_plan else '{}' }},
     tickerPrice: null,
+    balance: {},
     _pollTimer: null,
     _tickerTimer: null,
+    _balanceTimer: null,
 
     init() {
       if (this.engineRunning) {
@@ -161,7 +178,17 @@ function dashboardApp() {
     startPolling() {
       this._pollTimer = setInterval(() => this.pollPosition(), 3000);
       this._tickerTimer = setInterval(() => this.pollTicker(), 3000);
+      this._balanceTimer = setInterval(() => this.pollBalance(), 30000);
       this.pollTicker();
+      this.pollBalance();
+    },
+
+    async pollBalance() {
+      try {
+        const r = await fetch('/api/balance');
+        const d = await r.json();
+        if (d.equity != null) this.balance = d;
+      } catch (_) {}
     },
 
     async pollPosition() {

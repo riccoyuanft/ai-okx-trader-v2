@@ -364,3 +364,29 @@ class OKXClient:
             self._trade.cancel_algo_order,
             [{"instId": symbol, "algoId": algo_order_id}],
         )
+
+    async def get_history_positions(self, symbol: str, limit: int = 5) -> list[dict]:
+        """Return recently closed positions for a symbol.
+        Each item contains: closeAvgPx, realizedPnl, direction, cTime, uTime."""
+        try:
+            result = await asyncio.to_thread(
+                self._account.get_positions_history,
+                instType="SWAP",
+                instId=symbol,
+                limit=str(limit),
+            )
+            if result.get("code") != "0" or not result.get("data"):
+                return []
+            out = []
+            for p in result["data"]:
+                direction = p.get("direction") or ("long" if float(p.get("pos", 0)) >= 0 else "short")
+                out.append({
+                    "direction": direction,
+                    "close_avg_px": float(p.get("closeAvgPx") or 0),
+                    "realized_pnl": float(p.get("realizedPnl") or 0),
+                    "close_time_ms": int(p.get("uTime") or 0),
+                })
+            return out
+        except Exception as e:
+            logger.warning(f"[OKX] get_history_positions error: {e}")
+            return []

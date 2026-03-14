@@ -89,6 +89,21 @@ async def delete_setup_session(session_id: str) -> None:
     await get_redis().delete(f"setup:{session_id}")
 
 
+# ── Account balance cache ────────────────────────────────────
+
+async def set_balance(user_id: str, balance: dict) -> None:
+    await get_redis().set(f"engine:{user_id}:balance", json.dumps(balance))
+
+
+async def get_balance(user_id: str) -> Optional[dict]:
+    val = await get_redis().get(f"engine:{user_id}:balance")
+    return json.loads(val) if val else None
+
+
+async def clear_balance(user_id: str) -> None:
+    await get_redis().delete(f"engine:{user_id}:balance")
+
+
 # ── News (latest N items from scraper) ─────────────────────
 
 async def get_latest_news(count: int = 20) -> list[dict]:

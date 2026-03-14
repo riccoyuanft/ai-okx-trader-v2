@@ -46,6 +46,7 @@
         </div>
         <div>
           {% if t.close_reason %}
+          {% set reason_labels = {'sl': '止损', 'tp': '止盈', 'ai_close': 'AI平仓', 'manual': '手动平仓', 'liquidation_guard': '强平保护', 'external_close': '外部平仓', 'orphan_on_restart': '重启修复', 'orphan_cleanup': '重启修复'} %}
           <span class="px-2 py-0.5 rounded-full text-xs
             {% if t.close_reason == 'sl' %}bg-red-900/40 text-red-400
             {% elif t.close_reason == 'tp' %}bg-green-900/40 text-green-400
@@ -53,8 +54,9 @@
             {% elif t.close_reason == 'liquidation_guard' %}bg-orange-900/40 text-orange-400
             {% elif t.close_reason in ('orphan_on_restart', 'orphan_cleanup') %}bg-gray-700 text-gray-500
             {% elif t.close_reason == 'external_close' %}bg-purple-900/40 text-purple-400
+            {% elif t.close_reason == 'manual' %}bg-gray-700 text-gray-300
             {% else %}bg-gray-800 text-gray-500{% endif %}">
-            {{ t.close_reason }}
+            {{ reason_labels.get(t.close_reason, t.close_reason) }}
           </span>
           {% elif not t.exit_price %}
           <span class="px-2 py-0.5 rounded-full text-xs bg-yellow-900/40 text-yellow-400">持仓中</span>
@@ -124,6 +126,7 @@
           </td>
           <td class="px-3 py-3 text-xs">
             {% if t.close_reason %}
+            {% set reason_labels = {'sl': '止损', 'tp': '止盈', 'ai_close': 'AI平仓', 'manual': '手动平仓', 'liquidation_guard': '强平保护', 'external_close': '外部平仓', 'orphan_on_restart': '重启修复', 'orphan_cleanup': '重启修复'} %}
             <span class="px-2 py-0.5 rounded-full text-xs
               {% if t.close_reason == 'sl' %}bg-red-900/40 text-red-400
               {% elif t.close_reason == 'tp' %}bg-green-900/40 text-green-400
@@ -131,8 +134,9 @@
               {% elif t.close_reason == 'liquidation_guard' %}bg-orange-900/40 text-orange-400
               {% elif t.close_reason in ('orphan_on_restart', 'orphan_cleanup') %}bg-gray-700 text-gray-500
               {% elif t.close_reason == 'external_close' %}bg-purple-900/40 text-purple-400
+              {% elif t.close_reason == 'manual' %}bg-gray-700 text-gray-300
               {% else %}bg-gray-800 text-gray-500{% endif %}">
-              {{ t.close_reason }}
+              {{ reason_labels.get(t.close_reason, t.close_reason) }}
             </span>
             {% else %}<span class="text-gray-700">—</span>{% endif %}
           </td>

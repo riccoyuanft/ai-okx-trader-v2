@@ -6,7 +6,7 @@ from typing import Optional
 from loguru import logger
 
 from src.auth.crypto import decrypt
-from src.db.redis_client import set_position, clear_position, set_ai_plan, clear_ai_plan
+from src.db.redis_client import set_position, clear_position, set_ai_plan, clear_ai_plan, set_balance, clear_balance
 from src.db.supabase_client import get_user_repo, get_trade_repo
 from src.engine.okx_client import OKXClient
 from src.engine.ta_calc import build_multi_tf_summary, format_multi_tf_klines, _MIN_CANDLES as _TA_MIN_CANDLES
@@ -284,6 +284,14 @@ class UserEngine:
 
         # 4. Account balance
         balance = await self._okx.get_account_balance()
+        try:
+            await set_balance(self.user_id, {
+                "equity": balance.get("equity", 0),
+                "available": balance.get("available", 0),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            })
+        except Exception:
+            pass
 
         # 5. Current position
         position = await self._okx.get_position(symbol)
@@ -565,11 +573,35 @@ class UserEngine:
 
         if self._current_trade_id:
             try:
-                trade_repo = get_trade_repo()
-                await trade_repo.update_close(self._current_trade_id, self.user_id, {
+                exit_price = None
+                realized_pnl = None
+                try:
+                    hist = await self._okx.get_history_positions(symbol, limit=3)
+                    if hist:
+                        latest = hist[0]
+                        if latest.get("close_avg_px"):
+                            exit_price = latest["close_avg_px"]
+                        if latest.get("realized_pnl") is not None:
+                            realized_pnl = latest["realized_pnl"]
+                except Exception as he:
+                    await self._log(f"获取历史持仓失败（继续）: {he}")
+
+                close_data: dict = {
                     "close_time": datetime.now(timezone.utc).isoformat(),
                     "close_reason": "external_close",
-                })
+                }
+                if exit_price:
+                    close_data["exit_price"] = exit_price
+                if realized_pnl is not None:
+                    close_data["pnl_usdt"] = realized_pnl
+
+                trade_repo = get_trade_repo()
+                await trade_repo.update_close(self._current_trade_id, self.user_id, close_data)
+                self._risk_state = record_trade_result(self._risk_state, realized_pnl or 0)
+
+                pnl_str = f"{realized_pnl:+.2f} USDT" if realized_pnl is not None else "未知"
+                price_str = str(exit_price) if exit_price else "未知"
+                await self._log(f"外部平仓已记录: 出场价={price_str} 已实现盈亏={pnl_str}")
             except Exception as e:
                 await self._log(f"外部平仓DB更新失败（继续）: {e}")
             self._current_trade_id = None
