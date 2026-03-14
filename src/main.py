@@ -5,8 +5,7 @@ from fastapi.responses import RedirectResponse, JSONResponse
 from loguru import logger
 import traceback
 
-from src.db.redis_client import get_all_running_user_ids
-from src.db.supabase_client import get_strategy_repo
+from src.db.supabase_client import get_strategy_repo, get_user_repo
 from src.engine.manager import get_manager
 from src.news.scraper import run_scraper
 
@@ -17,18 +16,25 @@ import asyncio
 async def lifespan(app: FastAPI):
     logger.info("AI OKX Trader v2 starting up...")
 
-    # Restore engines that were running before restart
+    # Restore engines from DB (engine_running=True is the persistent source of truth).
+    # Redis flags are NOT used for restart decisions — they are volatile and can survive
+    # a manual stop if the process is killed before shutdown_all() completes.
     manager = get_manager()
     try:
+        user_repo = get_user_repo()
         strategy_repo = get_strategy_repo()
-        running_ids = await get_all_running_user_ids()
-        for user_id in running_ids:
+        running_users = await user_repo.get_all_engine_running()
+        for row in running_users:
+            user_id = row.get("id")
+            if not user_id:
+                continue
             strategy = await strategy_repo.get_active(user_id)
             if strategy:
                 await manager.start_engine(user_id, strategy)
-                logger.info(f"Auto-restored engine for user {user_id}")
+                logger.info(f"Auto-restored engine for user {user_id} (strategy: {strategy.get('name')})")
             else:
-                logger.warning(f"No active strategy for user {user_id}, skipping restore")
+                logger.warning(f"No active strategy for user {user_id}, clearing engine_running flag")
+                await user_repo.set_engine_running(user_id, False)
     except Exception as e:
         logger.warning(f"Engine restore skipped (external services unavailable): {e}")
 

@@ -170,20 +170,43 @@ class OKXClient:
         data = result.get("data", [])
         if not data:
             return None
-        pos = data[0]
-        qty = float(pos.get("pos") or 0)
-        if qty == 0:
+
+        if self._pos_mode == "long_short_mode":
+            # In long_short_mode, pos is always positive; direction comes from posSide.
+            # OKX may return both long and short entries — find the one with non-zero qty.
+            for pos in data:
+                qty = float(pos.get("pos") or 0)
+                if qty > 0:
+                    pos_side = pos.get("posSide", "long")
+                    direction = pos_side  # "long" or "short"
+                    logger.debug(f"[OKX] get_position long_short_mode: posSide={pos_side} qty={qty}")
+                    return {
+                        "symbol": symbol,
+                        "direction": direction,
+                        "qty": qty,
+                        "entry_price": float(pos.get("avgPx") or 0),
+                        "liquidation_price": float(pos.get("liqPx") or 0),
+                        "unrealized_pnl": float(pos.get("upl") or 0),
+                        "leverage": int(float(pos.get("lever") or 1)),
+                        "margin": float(pos.get("imr") or 0),
+                    }
             return None
-        return {
-            "symbol": symbol,
-            "direction": "long" if qty > 0 else "short",
-            "qty": abs(qty),
-            "entry_price": float(pos.get("avgPx") or 0),
-            "liquidation_price": float(pos.get("liqPx") or 0),
-            "unrealized_pnl": float(pos.get("upl") or 0),
-            "leverage": int(float(pos.get("lever") or 1)),
-            "margin": float(pos.get("imr") or 0),
-        }
+        else:
+            # In net_mode, qty sign determines direction (positive=long, negative=short)
+            pos = data[0]
+            qty = float(pos.get("pos") or 0)
+            if qty == 0:
+                return None
+            return {
+                "symbol": symbol,
+                "direction": "long" if qty > 0 else "short",
+                "qty": abs(qty),
+                "entry_price": float(pos.get("avgPx") or 0),
+                "liquidation_price": float(pos.get("liqPx") or 0),
+                "unrealized_pnl": float(pos.get("upl") or 0),
+                "leverage": int(float(pos.get("lever") or 1)),
+                "margin": float(pos.get("imr") or 0),
+            }
 
     async def set_leverage(self, symbol: str, leverage: int, margin_mode: str = "isolated") -> None:
         if self._pos_mode == "long_short_mode":

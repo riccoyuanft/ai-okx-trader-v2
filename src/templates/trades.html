@@ -4,7 +4,10 @@
 
 <div class="max-w-5xl mx-auto">
   <div class="flex items-center justify-between mb-6">
-    <h1 class="text-xl font-semibold text-gray-100">交易记录</h1>
+    <div class="flex items-center gap-3">
+      <h1 class="text-xl font-semibold text-gray-100">交易记录</h1>
+      <span class="px-2 py-0.5 rounded-full text-xs font-medium {% if is_testnet %}bg-yellow-900/40 text-yellow-400{% else %}bg-green-900/40 text-green-400{% endif %}">{{ mode_label }}</span>
+    </div>
     <div class="text-sm text-gray-500">本页 {{ trades | length }} 条</div>
   </div>
 
@@ -19,7 +22,7 @@
       <div class="text-2xl font-bold {% if win_rate >= 50 %}text-green-400{% else %}text-red-400{% endif %}">{{ win_rate }}%</div>
     </div>
     <div class="bg-gray-900 border border-gray-800 rounded-xl p-4 text-center">
-      <div class="text-xs text-gray-500 mb-1">本页累计盈亏 (USDT)</div>
+      <div class="text-xs text-gray-500 mb-1">全部累计盈亏 (USDT)</div>
       <div class="text-2xl font-bold {% if total_pnl >= 0 %}text-green-400{% else %}text-red-400{% endif %}">
         {% if total_pnl >= 0 %}+{% endif %}{{ total_pnl }}
       </div>
@@ -48,6 +51,8 @@
             {% elif t.close_reason == 'tp' %}bg-green-900/40 text-green-400
             {% elif t.close_reason == 'ai_close' %}bg-blue-900/40 text-blue-400
             {% elif t.close_reason == 'liquidation_guard' %}bg-orange-900/40 text-orange-400
+            {% elif t.close_reason in ('orphan_on_restart', 'orphan_cleanup') %}bg-gray-700 text-gray-500
+            {% elif t.close_reason == 'external_close' %}bg-purple-900/40 text-purple-400
             {% else %}bg-gray-800 text-gray-500{% endif %}">
             {{ t.close_reason }}
           </span>
@@ -124,6 +129,8 @@
               {% elif t.close_reason == 'tp' %}bg-green-900/40 text-green-400
               {% elif t.close_reason == 'ai_close' %}bg-blue-900/40 text-blue-400
               {% elif t.close_reason == 'liquidation_guard' %}bg-orange-900/40 text-orange-400
+              {% elif t.close_reason in ('orphan_on_restart', 'orphan_cleanup') %}bg-gray-700 text-gray-500
+              {% elif t.close_reason == 'external_close' %}bg-purple-900/40 text-purple-400
               {% else %}bg-gray-800 text-gray-500{% endif %}">
               {{ t.close_reason }}
             </span>

@@ -86,6 +86,15 @@ class UserRepo:
         """Switch active trading mode between testnet and live."""
         self.db.table("users").update({"okx_testnet": testnet}).eq("id", user_id).execute()
 
+    async def set_engine_running(self, user_id: str, running: bool) -> None:
+        """Persist engine on/off state so it survives server restarts."""
+        self.db.table("users").update({"engine_running": running}).eq("id", user_id).execute()
+
+    async def get_all_engine_running(self) -> list[dict]:
+        """Return all users with engine_running=True (used on server startup)."""
+        res = self.db.table("users").select("id").eq("engine_running", True).execute()
+        return res.data or []
+
     async def update_notify_config(
         self, user_id: str, notify_provider: str, notify_webhook: str
     ) -> None:
@@ -211,15 +220,22 @@ class TradeRepo:
     async def update_close(self, trade_id: str, user_id: str, close_data: dict) -> None:
         self.db.table("trade_logs").update(close_data).eq("id", trade_id).eq("user_id", user_id).execute()
 
-    async def get_by_user(self, user_id: str, limit: int = 50, offset: int = 0) -> list[dict]:
-        res = (
+    async def update_stop_loss(self, trade_id: str, user_id: str, stop_loss: float) -> None:
+        self.db.table("trade_logs").update({"stop_loss": stop_loss}).eq("id", trade_id).eq("user_id", user_id).execute()
+
+    async def get_by_user(
+        self, user_id: str, limit: int = 50, offset: int = 0,
+        is_testnet: Optional[bool] = None,
+    ) -> list[dict]:
+        q = (
             self.db.table("trade_logs")
             .select("*")
             .eq("user_id", user_id)
             .order("open_time", desc=True)
-            .range(offset, offset + limit - 1)
-            .execute()
         )
+        if is_testnet is not None:
+            q = q.eq("is_testnet", is_testnet)
+        res = q.range(offset, offset + limit - 1).execute()
         return res.data or []
 
     async def get_open_by_user(self, user_id: str) -> list[dict]:

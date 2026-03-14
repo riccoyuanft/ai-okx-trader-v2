@@ -31,6 +31,7 @@ _SYSTEM_TEMPLATE = """\
 - 最大仓位上限: {max_position_pct}%（基于账户权益）
 - 保证金模式: 逐仓（固定，不可更改）
 - 每笔交易必须提供止损价格
+- 止损只能向盈利方向移动：多单止损只能上调、空单止损只能下调，严禁反向移动
 
 【响应格式】
 仅以如下 JSON 格式回复，不要添加任何其他文字或 markdown：
@@ -55,18 +56,20 @@ _USER_TEMPLATE = """\
 请根据以上数据和你的交易策略做出决策。"""
 
 
-def _build_position_desc(position: Optional[dict]) -> str:
+def _build_position_desc(position: Optional[dict], current_stop_loss: Optional[float] = None) -> str:
     if not position:
         return "无持仓"
     dir_cn = "多" if position["direction"] == "long" else "空"
     pnl = position.get("unrealized_pnl", 0)
     pnl_sign = "+" if pnl >= 0 else ""
+    sl_str = f" | 当前止损: {current_stop_loss}" if current_stop_loss and current_stop_loss > 0 else " | 当前止损: 未设置"
     return (
         f"{dir_cn}单 {position['qty']}张 "
         f"@ 均价 {position['entry_price']} "
         f"| 杠杆 {position['leverage']}x "
         f"| 未实现盈亏 {pnl_sign}{pnl:.2f} USDT"
         f"| 强平价 {position.get('liquidation_price', 0)}"
+        f"{sl_str}"
     )
 
 
@@ -136,6 +139,7 @@ async def get_trading_decision(
     recent_trades: Optional[list] = None,
     news_sentiment: Optional[dict] = None,
     history: Optional[list] = None,
+    current_stop_loss: Optional[float] = None,
 ) -> tuple[dict, list]:
     """
     Build prompt, call AI endpoint, parse decision.
@@ -148,6 +152,7 @@ async def get_trading_decision(
         position_state: current OKX position dict or None
         history: per-user per-strategy conversation history list (mutated and returned)
         news_sentiment: optional dict with 'summary' key
+        current_stop_loss: current active stop-loss price (for trailing SL context)
     """
     from src.config.settings import get_settings
     settings = get_settings()
@@ -175,7 +180,7 @@ async def get_trading_decision(
 
     user_prompt = _USER_TEMPLATE.format(
         symbol=market_data.get("symbol", "?"),
-        position_desc=_build_position_desc(position_state),
+        position_desc=_build_position_desc(position_state, current_stop_loss),
         balance=market_data.get("balance_usdt", 0),
         available=market_data.get("available_usdt", 0),
         klines_section=klines_section,
@@ -189,7 +194,7 @@ async def get_trading_decision(
     # Compact prompt for history storage (strip raw K-lines — TA summary retained)
     history_user_prompt = _USER_TEMPLATE.format(
         symbol=market_data.get("symbol", "?"),
-        position_desc=_build_position_desc(position_state),
+        position_desc=_build_position_desc(position_state, current_stop_loss),
         balance=market_data.get("balance_usdt", 0),
         available=market_data.get("available_usdt", 0),
         klines_section="",

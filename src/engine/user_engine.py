@@ -1,4 +1,5 @@
 import asyncio
+import time
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -18,6 +19,7 @@ _CREDIT_COST_TESTNET = 1  # 模拟盘
 _CREDIT_COST_LIVE = 2     # 实盘
 
 _TF_SECONDS = {
+    "1m": 60,
     "5m": 300,
     "15m": 900,
     "30m": 1800,
@@ -72,6 +74,8 @@ class UserEngine:
         self._current_trade_id: Optional[str] = None
         self._current_algo_id: Optional[str] = None
         self._current_stop_loss: Optional[float] = None
+        self._current_take_profits: list = []
+        self._last_ext_close_check: float = 0.0  # monotonic timestamp of last external-close check
 
         self._notify_provider: str = "dingtalk"
         self._notify_webhook: Optional[str] = None
@@ -177,20 +181,30 @@ class UserEngine:
         """On startup, check if an open position exists and link it to the open DB trade."""
         try:
             position = await self._okx.get_position(symbol)
-            if not position:
-                return
             trade_repo = get_trade_repo()
             open_trades = await trade_repo.get_open_by_user(self.user_id)
-            # Find the open trade matching this symbol
-            for trade in open_trades:
-                if trade.get("symbol") == symbol:
-                    self._current_trade_id = trade["id"]
-                    self._current_stop_loss = float(trade.get("stop_loss") or 0) or None
-                    await self._log(
-                        f"恢复未平仓记录: {position['direction']}单 {position['qty']}张 "
-                        f"开仓价:{position['entry_price']} 止损:{self._current_stop_loss}"
-                    )
-                    return
+            symbol_trades = [t for t in open_trades if t.get("symbol") == symbol]
+
+            if not position:
+                # No OKX position — mark any lingering open DB records as orphan-closed (P3-1)
+                for trade in symbol_trades:
+                    await trade_repo.update_close(trade["id"], self.user_id, {
+                        "close_time": datetime.now(timezone.utc).isoformat(),
+                        "close_reason": "orphan_on_restart",
+                        "pnl_usdt": 0,
+                    })
+                    await self._log(f"自动修复孤儿记录: trade_id={trade['id']} 已标记为已平仓")
+                return
+
+            # Position exists — find matching DB record
+            for trade in symbol_trades:
+                self._current_trade_id = trade["id"]
+                self._current_stop_loss = float(trade.get("stop_loss") or 0) or None
+                await self._log(
+                    f"恢复未平仓记录: {position['direction']}单 {position['qty']}张 "
+                    f"开仓价:{position['entry_price']} 止损:{self._current_stop_loss}"
+                )
+                return
             # Position exists on OKX but no DB record — log warning
             await self._log(
                 f"警告: OKX存在{position['direction']}仓位但数据库无对应记录，将追踪但不更新历史"
@@ -278,12 +292,15 @@ class UserEngine:
         else:
             await clear_position(self.user_id)
 
-        # 6. Recent trade history (last 5 closed trades for AI context)
+        # 6. Recent trade history (last 5 closed trades for this symbol only)
         trade_repo = get_trade_repo()
-        recent_trades = await trade_repo.get_by_user(self.user_id, limit=5)
-        closed_trades = [t for t in recent_trades if t.get("close_time")]
+        recent_trades = await trade_repo.get_by_user(self.user_id, limit=50)
+        closed_trades = [
+            t for t in recent_trades
+            if t.get("close_time") and t.get("symbol") == symbol
+        ][:5]
         if closed_trades:
-            await self._log(f"历史交易: 最近 {len(closed_trades)} 笔已平仓记录已传入 AI")
+            await self._log(f"历史交易: 最近 {len(closed_trades)} 笔 {symbol} 已平仓记录已传入 AI")
 
         # 7. News (if enabled)
         news_sentiment = None
@@ -351,6 +368,7 @@ class UserEngine:
             recent_trades=closed_trades,
             news_sentiment=news_sentiment,
             history=self._ai_history,
+            current_stop_loss=self._current_stop_loss,
         )
         await self._log(f"[AI Prompt] 标的:{symbol} 余额:{balance.get('equity',0):.2f} 持仓:{position is not None} 历史:{len(closed_trades)}笔")
         await self._log(f"[AI Response] {decision.get('reason', '')} → action={decision.get('action','').upper()} lev={decision.get('leverage')}x pos={decision.get('position_pct')}% sl={decision.get('stop_loss')}")
@@ -368,6 +386,18 @@ class UserEngine:
             "reason": reason,
             "updated_at": datetime.now(timezone.utc).isoformat(),
         })
+
+        # Trailing stop-loss: only when holding and NOT about to reverse/close
+        if position and action not in ("close",):
+            same_dir = (
+                action == "wait" or
+                (action == "long" and position["direction"] == "long") or
+                (action == "short" and position["direction"] == "short")
+            )
+            if same_dir:
+                new_sl = decision.get("stop_loss")
+                if new_sl and float(new_sl) > 0:
+                    await self._maybe_update_stop_loss(position, float(new_sl))
 
         # 8. Execute
         if action == "wait":
@@ -434,6 +464,7 @@ class UserEngine:
             )
             self._current_algo_id = order_result.get("algo_order_id")
             self._current_stop_loss = sl_price
+            self._current_take_profits = decision.get("take_profit") or []
 
             dir_cn = "多" if action == "long" else "空"
             sl_str = f" | 止损: {sl_price}" if sl_price else ""
@@ -459,6 +490,7 @@ class UserEngine:
                 "algo_order_id": self._current_algo_id,
                 "ai_reasoning": decision.get("reason", ""),
                 "open_time": datetime.now(timezone.utc).isoformat(),
+                "is_testnet": self._is_testnet,
             })
             self._current_trade_id = trade["id"]
 
@@ -475,6 +507,7 @@ class UserEngine:
                 pass
             self._current_algo_id = None
             self._current_stop_loss = None
+        self._current_take_profits = []
 
         # Fetch exit price before closing
         try:
@@ -510,14 +543,108 @@ class UserEngine:
         await clear_position(self.user_id)
         await clear_ai_plan(self.user_id)
 
+    # ── External close detection ─────────────────────────────────────────────
+
+    async def _handle_external_close(self) -> None:
+        """
+        Called when the position disappears from OKX while the engine still
+        holds an open trade record.  This happens when the user manually
+        closes the position directly on OKX (app / web).
+        Cleans up all engine state and writes a DB close record.
+        """
+        symbol = self.strategy["symbol"]
+
+        if self._current_algo_id:
+            try:
+                await self._okx.cancel_algo_order(symbol, self._current_algo_id)
+            except Exception:
+                pass
+            self._current_algo_id = None
+        self._current_stop_loss = None
+        self._current_take_profits = []
+
+        if self._current_trade_id:
+            try:
+                trade_repo = get_trade_repo()
+                await trade_repo.update_close(self._current_trade_id, self.user_id, {
+                    "close_time": datetime.now(timezone.utc).isoformat(),
+                    "close_reason": "external_close",
+                })
+            except Exception as e:
+                await self._log(f"外部平仓DB更新失败（继续）: {e}")
+            self._current_trade_id = None
+
+        await clear_position(self.user_id)
+        await clear_ai_plan(self.user_id)
+
+        await self._notify(
+            f"⚠️ 外部平仓检测 [{symbol}]",
+            "OKX上的仓位已被外部关闭（可能是手动操作），系统状态已同步"
+        )
+
+    # ── Trailing stop-loss ───────────────────────────────────────────────────
+
+    async def _maybe_update_stop_loss(self, position: dict, new_sl: float) -> None:
+        """
+        Apply trailing stop-loss update if the AI suggests a better SL.
+        Only allows moves in the profit direction:
+          long  → new_sl must be HIGHER  than current_sl
+          short → new_sl must be LOWER   than current_sl
+        If no current SL exists the new value is accepted as long as it is
+        on the correct side of the entry price.
+        """
+        symbol = self.strategy["symbol"]
+        direction = position["direction"]
+        current_sl = self._current_stop_loss
+
+        if current_sl and current_sl > 0:
+            if direction == "long" and new_sl <= current_sl:
+                return
+            if direction == "short" and new_sl >= current_sl:
+                return
+        else:
+            entry = position.get("entry_price", 0)
+            if direction == "long" and entry > 0 and new_sl >= entry:
+                return
+            if direction == "short" and entry > 0 and new_sl <= entry:
+                return
+
+        # Cancel existing algo order before placing the new one
+        if self._current_algo_id:
+            try:
+                await self._okx.cancel_algo_order(symbol, self._current_algo_id)
+            except Exception as e:
+                await self._log(f"取消旧止损单失败（继续）: {e}")
+            self._current_algo_id = None
+
+        entry_side = "buy" if direction == "long" else "sell"
+        qty = position["qty"]
+        new_algo_id = await self._okx._place_stop_loss(symbol, entry_side, qty, new_sl)
+        self._current_algo_id = new_algo_id
+        old_sl = self._current_stop_loss
+        self._current_stop_loss = new_sl
+
+        if self._current_trade_id:
+            try:
+                trade_repo = get_trade_repo()
+                await trade_repo.update_stop_loss(self._current_trade_id, self.user_id, new_sl)
+            except Exception as e:
+                await self._log(f"止损DB更新失败（继续）: {e}")
+
+        move_desc = f"{old_sl} → {new_sl}" if old_sl else f"新设 {new_sl}"
+        dir_str = "上移" if direction == "long" else "下移"
+        await self._log(f"移动止损更新: {move_desc} ({dir_str})")
+
     # ── Price monitor ────────────────────────────────────────────────────────
 
     async def _price_monitor(self) -> None:
         await self._log("价格监控启动")
         symbol = self.strategy["symbol"]
+        timeframe = self.strategy.get("timeframe", "15m")
+        monitor_interval = 1 if timeframe == "1m" else 3
 
         while True:
-            await asyncio.sleep(3)
+            await asyncio.sleep(monitor_interval)
             if not self._okx:
                 continue
             try:
@@ -537,6 +664,14 @@ class UserEngine:
 
                 position = await self._okx.get_position(symbol)
                 if not position:
+                    # External close detection runs at low frequency (every 30s) to avoid
+                    # false positives from transient API blips and unnecessary API calls.
+                    if self._current_trade_id:
+                        now = time.monotonic()
+                        if now - self._last_ext_close_check >= 30:
+                            self._last_ext_close_check = now
+                            await self._log("检测到仓位外部平仓（OKX上已无持仓），同步系统状态")
+                            await self._handle_external_close()
                     continue
 
                 # Update Redis with live price
@@ -559,6 +694,7 @@ class UserEngine:
                         f"当前价格: {price}\n强平价: {liq_price}\n已触发紧急平仓！"
                     )
                     await self._close_position(position, reason="liquidation_guard")
+                    continue
 
                 # Software stop-loss backup
                 if self._current_stop_loss and self._current_stop_loss > 0:
@@ -572,6 +708,23 @@ class UserEngine:
                             f"软件止损触发（备用）: 价格 {price} 已触及止损 {sl}"
                         )
                         await self._close_position(position, reason="sl")
+                        continue
+
+                # Software take-profit monitor
+                if self._current_take_profits:
+                    direction = position["direction"]
+                    for tp in self._current_take_profits:
+                        if tp and float(tp) > 0:
+                            tp_hit = (
+                                (direction == "long" and price >= float(tp)) or
+                                (direction == "short" and price <= float(tp))
+                            )
+                            if tp_hit:
+                                await self._log(
+                                    f"止盈触发: 价格 {price} 已达止盈 {tp}"
+                                )
+                                await self._close_position(position, reason="tp")
+                                break
 
             except asyncio.CancelledError:
                 raise

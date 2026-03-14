@@ -16,89 +16,89 @@
     自动交易未运行，无法发送平仓指令。
   </div>
   {% endif %}
+  {% if qs.get('error') == 'has_position' %}
+  <div class="bg-red-900/40 border border-red-700 text-red-300 text-sm rounded-xl px-4 py-3">
+    当前有未平仓位，请先手动平仓后再停止自动交易，以防风险。
+  </div>
+  {% endif %}
 
-  <!-- Engine Status Card -->
-  <div class="bg-gray-900 border border-gray-800 rounded-xl sm:rounded-2xl p-4 sm:p-6">
-    <div class="flex items-center justify-between mb-3 sm:mb-4">
-      <h2 class="text-base sm:text-lg font-semibold text-gray-100">自动交易</h2>
-      {% if not active_strategy %}
-      <a href="/strategies/new" class="text-xs sm:text-sm text-blue-400 hover:text-blue-300">+ 新建策略</a>
-      {% endif %}
-    </div>
-
+  <!-- Engine Status Card — compact horizontal bar on PC -->
+  <div class="bg-gray-900 border border-gray-800 rounded-xl sm:rounded-2xl">
     {% if active_strategy %}
-    <div class="space-y-3 sm:space-y-0 sm:flex sm:items-center sm:gap-4">
-      <div class="flex items-center gap-3 flex-1">
-        <div class="w-2.5 h-2.5 rounded-full flex-shrink-0 {% if engine_running %}bg-green-400 animate-pulse{% else %}bg-gray-600{% endif %}"></div>
-        <div class="min-w-0">
-          <div class="font-medium text-gray-100 text-sm sm:text-base">{{ active_strategy.symbol }}</div>
-          <div class="text-xs sm:text-sm text-gray-500 truncate">策略: {{ active_strategy.name }} · {{ active_strategy.default_leverage }}x · 逐仓</div>
-        </div>
+    <!-- Top bar: strategy meta + controls -->
+    <div class="flex items-center gap-3 px-4 sm:px-5 py-3 border-b border-gray-800/60">
+      <div class="w-2 h-2 rounded-full flex-shrink-0 {% if engine_running %}bg-green-400 animate-pulse{% else %}bg-gray-600{% endif %}"></div>
+      <div class="flex-1 min-w-0">
+        <span class="font-semibold text-gray-100 text-sm mr-2">{{ active_strategy.symbol }}</span>
+        <span class="text-xs text-gray-600">{{ active_strategy.name }} · {{ active_strategy.default_leverage }}x · 逐仓</span>
       </div>
-
-      <!-- Position info: live-updated by Alpine polling -->
-      <div x-show="pos.direction" class="flex-1 space-y-1.5">
-        <!-- Position row -->
-        <div class="bg-gray-800 rounded-xl px-3 sm:px-4 py-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs sm:text-sm">
-          <span :class="pos.direction === 'long' ? 'text-green-400' : 'text-red-400'" class="font-semibold" x-text="pos.direction === 'long' ? '多单' : '空单'"></span>
-          <span class="text-gray-400" x-text="pos.qty + ' 张'"></span>
-          <template x-if="pos.leverage"><span class="text-gray-500 font-mono" x-text="pos.leverage + 'x'"></span></template>
-          <span class="text-gray-500">入场</span>
-          <span class="font-mono text-gray-300" x-text="pos.entry_price"></span>
-          <span class="text-gray-500">现价</span>
-          <span class="font-mono text-gray-300" x-text="pos.current_price || '—'"></span>
-          <span
-            :class="(pos.unrealized_pnl || 0) >= 0 ? 'text-green-400' : 'text-red-400'"
-            class="font-mono font-semibold"
-            x-text="((pos.unrealized_pnl || 0) >= 0 ? '+' : '') + parseFloat(pos.unrealized_pnl || 0).toFixed(2) + ' USDT'"
-          ></span>
-        </div>
-        <!-- AI plan row: always visible when holding position -->
-        <div class="bg-gray-800/60 rounded-xl px-3 sm:px-4 py-2 flex flex-wrap items-start gap-x-4 gap-y-1 text-xs">
-          <span class="text-blue-400 font-medium shrink-0">AI计划</span>
-          <template x-if="!plan.updated_at">
-            <span class="text-gray-600 italic">等待下次决策更新...</span>
-          </template>
-          <template x-if="plan.updated_at">
-            <span class="contents">
-              <template x-if="plan.stop_loss">
-                <span class="text-gray-400 shrink-0">止损 <span class="font-mono text-red-400" x-text="plan.stop_loss"></span></span>
-              </template>
-              <template x-if="plan.take_profit && plan.take_profit.length">
-                <span class="text-gray-400 shrink-0">止盈 <span class="font-mono text-green-400" x-text="plan.take_profit.join(' / ')"></span></span>
-              </template>
-              <span class="text-blue-300/60 shrink-0 font-mono" x-text="plan.action ? '[' + plan.action.toUpperCase() + ']' : ''"></span>
-              <span class="text-gray-700 shrink-0" x-text="plan.updated_at ? (d => isNaN(d) ? plan.updated_at : d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}))(new Date(plan.updated_at)) : ''"></span>
-              <span class="text-gray-500 w-full mt-0.5" x-text="plan.reason || ''"></span>
-            </span>
-          </template>
-        </div>
-      </div>
-      <div x-show="!pos.direction" class="text-xs sm:text-sm text-gray-600">无持仓</div>
-
+      <!-- Controls always in the same row -->
       <div class="flex items-center gap-2 shrink-0">
-        <!-- Manual close button: only when engine running AND has position -->
         <form x-show="pos.direction" action="/position/close" method="post">
           <button type="submit"
             onclick="return confirm('确认手动平仓？引擎将继续运行等待下一次开仓机会。')"
-            class="bg-orange-700 hover:bg-orange-600 text-white text-xs sm:text-sm px-3 sm:px-4 py-2 rounded-lg transition-colors whitespace-nowrap">
+            class="bg-orange-700 hover:bg-orange-600 text-white text-xs px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap">
             手动平仓
           </button>
         </form>
-
         {% if engine_running %}
         <form action="/engine/stop" method="post">
-          <button type="submit" class="bg-red-700 hover:bg-red-600 text-white text-xs sm:text-sm px-4 py-2 rounded-lg transition-colors whitespace-nowrap">停止</button>
+          <button type="submit" class="bg-red-700 hover:bg-red-600 text-white text-xs px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap">停止</button>
         </form>
         {% else %}
         <form action="/engine/start" method="post">
-          <button type="submit" class="bg-green-700 hover:bg-green-600 text-white text-xs sm:text-sm px-4 py-2 rounded-lg transition-colors whitespace-nowrap">开启自动交易</button>
+          <button type="submit" class="bg-green-700 hover:bg-green-600 text-white text-xs px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap">开启自动交易</button>
         </form>
         {% endif %}
       </div>
     </div>
+
+    <!-- Position + AI Plan row — hidden when no position -->
+    <div x-show="pos.direction" class="px-4 sm:px-5 py-3">
+      <!-- On PC: single row with position stats left and AI plan right -->
+      <div class="flex flex-col sm:flex-row sm:items-start sm:gap-6">
+        <!-- Position stats -->
+        <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs sm:text-sm">
+          <span :class="pos.direction === 'long' ? 'text-green-400' : 'text-red-400'" class="font-bold" x-text="pos.direction === 'long' ? '多单' : '空单'"></span>
+          <span class="text-gray-400 font-mono" x-text="pos.qty + ' 张'"></span>
+          <template x-if="pos.leverage"><span class="text-gray-600 font-mono" x-text="pos.leverage + 'x'"></span></template>
+          <span class="text-gray-600">入场</span>
+          <span class="font-mono text-gray-300" x-text="pos.entry_price"></span>
+          <span class="text-gray-600">现价</span>
+          <span class="font-mono text-gray-200" x-text="pos.current_price || '—'"></span>
+          <span
+            :class="(pos.unrealized_pnl || 0) >= 0 ? 'text-green-400' : 'text-red-400'"
+            class="font-mono font-bold"
+            x-text="((pos.unrealized_pnl || 0) >= 0 ? '+' : '') + parseFloat(pos.unrealized_pnl || 0).toFixed(2) + ' USDT'"
+          ></span>
+        </div>
+        <!-- AI plan: flex-1 to fill remaining width on PC -->
+        <div class="flex-1 mt-2 sm:mt-0 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-gray-500 sm:justify-end">
+          <span class="text-blue-400 font-medium">AI</span>
+          <template x-if="plan.stop_loss">
+            <span>止损 <span class="font-mono text-red-400" x-text="plan.stop_loss"></span></span>
+          </template>
+          <template x-if="plan.take_profit && plan.take_profit.length">
+            <span>止盈 <span class="font-mono text-green-400" x-text="plan.take_profit.join(' / ')"></span></span>
+          </template>
+          <span class="font-mono text-blue-300/50" x-text="plan.action ? '[' + plan.action.toUpperCase() + ']' : ''"></span>
+          <span class="text-gray-700 font-mono" x-text="plan.updated_at ? (d => isNaN(d) ? '' : d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}))(new Date(plan.updated_at)) : ''"></span>
+          <span class="text-gray-600 w-full sm:w-auto sm:max-w-xs truncate" x-text="plan.reason || ''"></span>
+        </div>
+      </div>
+    </div>
+    <div x-show="!pos.direction" class="px-4 sm:px-5 py-2.5 text-xs text-gray-700 flex items-center gap-3">
+      <span>无持仓</span>
+      <template x-if="tickerPrice">
+        <span class="text-gray-500">现价 <span class="font-mono text-gray-400" x-text="tickerPrice"></span></span>
+      </template>
+    </div>
+
     {% else %}
-    <div class="text-gray-500 text-xs sm:text-sm">暂无激活策略，<a href="/strategies/new" class="text-blue-400 hover:text-blue-300">点击创建</a></div>
+    <div class="px-4 sm:px-5 py-4 flex items-center justify-between">
+      <span class="text-gray-500 text-sm">暂无激活策略</span>
+      <a href="/strategies/new" class="text-xs text-blue-400 hover:text-blue-300 border border-blue-800 px-3 py-1.5 rounded-lg">+ 新建策略</a>
+    </div>
     {% endif %}
   </div>
 
@@ -147,17 +147,21 @@ function dashboardApp() {
     engineRunning: {{ engine_running | tojson }},
     pos: {{ position | tojson if position else '{}' }},
     plan: {{ ai_plan | tojson if ai_plan else '{}' }},
+    tickerPrice: null,
     _pollTimer: null,
+    _tickerTimer: null,
 
     init() {
       if (this.engineRunning) {
         this.connectWS();
-        this.startPolling();
       }
+      this.startPolling();
     },
 
     startPolling() {
       this._pollTimer = setInterval(() => this.pollPosition(), 3000);
+      this._tickerTimer = setInterval(() => this.pollTicker(), 3000);
+      this.pollTicker();
     },
 
     async pollPosition() {
@@ -166,6 +170,14 @@ function dashboardApp() {
         const d = await r.json();
         this.pos = d.position || {};
         this.plan = d.ai_plan || {};
+      } catch (_) {}
+    },
+
+    async pollTicker() {
+      try {
+        const r = await fetch('/api/ticker');
+        const d = await r.json();
+        if (d.price != null) this.tickerPrice = d.price;
       } catch (_) {}
     },
 

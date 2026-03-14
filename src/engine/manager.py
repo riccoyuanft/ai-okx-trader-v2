@@ -19,6 +19,7 @@ class UserEngineManager:
         self._engines: dict[str, object] = {}         # live UserEngine instances
         self._user_stopped: set[str] = set()          # user-initiated stops: no restart
         self._reconnect_attempt: dict[str, int] = {}  # crash count per user
+        self._position_clients: dict[str, object] = {}  # cached OKX clients for position polling
 
     async def start_engine(self, user_id: str, strategy: dict) -> bool:
         if user_id in self.tasks and not self.tasks[user_id].done():
@@ -72,6 +73,7 @@ class UserEngineManager:
         self.log_queues.pop(user_id, None)
         self.log_buffers.pop(user_id, None)
         self._engines.pop(user_id, None)
+        self._position_clients.pop(user_id, None)  # invalidate cached client on stop
         logger.info(f"[{user_id}] Engine stopped by user")
         return True
 
@@ -81,6 +83,52 @@ class UserEngineManager:
 
     def get_log_buffer(self, user_id: str) -> list[str]:
         return list(self.log_buffers.get(user_id, []))
+
+    async def get_live_position(self, user_id: str, symbol: str) -> Optional[dict]:
+        """Return live position + current_price from OKX.
+        Uses the running engine's client if available, otherwise a cached lightweight client.
+        Returns {} for no position, None on error."""
+        engine = self._engines.get(user_id)
+        if engine and getattr(engine, "_okx", None):
+            okx = engine._okx
+        else:
+            if user_id not in self._position_clients:
+                okx = await self._make_okx_client(user_id)
+                if okx is None:
+                    return None
+                self._position_clients[user_id] = okx
+            okx = self._position_clients[user_id]
+        try:
+            position = await okx.get_position(symbol)
+            if not position:
+                return {}
+            ticker = await okx.get_ticker(symbol)
+            return {**position, "current_price": ticker["last"]}
+        except Exception as e:
+            logger.warning(f"[{user_id}] get_live_position error: {e}")
+            return None
+
+    async def _make_okx_client(self, user_id: str) -> Optional[object]:
+        """Create an OKXClient from stored user credentials (for engine-off polling)."""
+        from src.db.supabase_client import get_user_repo
+        from src.auth.crypto import decrypt
+        from src.engine.okx_client import OKXClient
+        try:
+            user_repo = get_user_repo()
+            user = await user_repo.get_by_id(user_id)
+            if not user:
+                return None
+            testnet = bool(user.get("okx_testnet", True))
+            if testnet:
+                key_f, sec_f, pass_f = "okx_api_key", "okx_secret_key", "okx_passphrase"
+            else:
+                key_f, sec_f, pass_f = "okx_live_api_key", "okx_live_secret_key", "okx_live_passphrase"
+            if not user.get(key_f):
+                return None
+            return OKXClient(decrypt(user[key_f]), decrypt(user[sec_f]), decrypt(user[pass_f]), testnet)
+        except Exception as e:
+            logger.warning(f"[{user_id}] _make_okx_client error: {e}")
+            return None
 
     def request_manual_close(self, user_id: str) -> bool:
         """Signal the running engine to close its position. Engine continues after close."""

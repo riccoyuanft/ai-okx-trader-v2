@@ -4,8 +4,10 @@ from fastapi.templating import Jinja2Templates
 from typing import Optional
 
 from src.auth.jwt import get_current_user
-from src.auth.crypto import encrypt
-from src.db.supabase_client import get_strategy_repo
+from src.auth.crypto import encrypt, decrypt
+from src.auth.totp import verify_token
+from src.db.supabase_client import get_strategy_repo, get_user_repo
+from src.db.redis_client import is_engine_running
 
 router = APIRouter()
 templates = Jinja2Templates(directory="src/templates")
@@ -87,11 +89,13 @@ async def strategy_edit_page(request: Request, strategy_id: str, user: dict = De
     strategy = await strategy_repo.get_by_id(strategy_id, user["user_id"])
     if not strategy:
         return RedirectResponse(url="/strategies", status_code=302)
+    engine_running = await is_engine_running(user["user_id"])
     return templates.TemplateResponse("strategy_edit.html", {
         "request": request,
         "user": user,
         "strategy": strategy,
         "action": f"/strategies/{strategy_id}/edit",
+        "engine_running": engine_running,
     })
 
 
@@ -115,8 +119,21 @@ async def strategy_update(
     max_consecutive_losses: int = Form(default=3),
     max_position_pct: float = Form(default=50.0),
     enable_news_analysis: bool = Form(default=False),
+    totp_token: str = Form(...),
 ):
+    user_repo = get_user_repo()
+    user_data = await user_repo.get_by_id(user["user_id"])
+    if not user_data:
+        return RedirectResponse(url=f"/strategies/{strategy_id}/edit?error=auth_failed", status_code=302)
+    totp_secret = decrypt(user_data["totp_secret"])
+    if not verify_token(totp_secret, totp_token):
+        return RedirectResponse(url=f"/strategies/{strategy_id}/edit?error=totp_failed", status_code=302)
+
     strategy_repo = get_strategy_repo()
+    strategy = await strategy_repo.get_by_id(strategy_id, user["user_id"])
+    if strategy and strategy.get("is_active") and await is_engine_running(user["user_id"]):
+        return RedirectResponse(url=f"/strategies/{strategy_id}/edit?error=engine_running", status_code=302)
+
     data = {
         "name": name,
         "symbol": symbol,
@@ -140,7 +157,21 @@ async def strategy_update(
 
 
 @router.post("/strategies/{strategy_id}/activate")
-async def strategy_activate(request: Request, strategy_id: str, user: dict = Depends(require_auth)):
+async def strategy_activate(
+    request: Request,
+    strategy_id: str,
+    user: dict = Depends(require_auth),
+    totp_token: str = Form(...),
+):
+    if await is_engine_running(user["user_id"]):
+        return RedirectResponse(url="/strategies?error=engine_running", status_code=302)
+    user_repo = get_user_repo()
+    user_data = await user_repo.get_by_id(user["user_id"])
+    if not user_data:
+        return RedirectResponse(url="/strategies?error=auth_failed", status_code=302)
+    totp_secret = decrypt(user_data["totp_secret"])
+    if not verify_token(totp_secret, totp_token):
+        return RedirectResponse(url="/strategies?error=totp_failed", status_code=302)
     strategy_repo = get_strategy_repo()
     await strategy_repo.activate(strategy_id, user["user_id"])
     return RedirectResponse(url="/strategies", status_code=302)
