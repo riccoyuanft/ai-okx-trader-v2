@@ -6,6 +6,7 @@ from src.auth.jwt import get_current_user, create_access_token
 from src.auth.totp import verify_token
 from src.auth.crypto import encrypt, decrypt
 from src.db.supabase_client import get_user_repo
+from src.db.redis_client import is_engine_running
 
 router = APIRouter()
 templates = Jinja2Templates(directory="src/templates")
@@ -20,12 +21,14 @@ async def account_page(request: Request, user: dict = Depends(require_auth)):
     user_repo = get_user_repo()
     user_data = await user_repo.get_by_id(user["user_id"])
     credit_info = await user_repo.get_credit_info(user["user_id"])
+    engine_running = await is_engine_running(user["user_id"])
 
     response = templates.TemplateResponse("account.html", {
         "request": request,
         "user": user,
         "user_data": user_data,
         "credit_info": credit_info,
+        "engine_running": engine_running,
     })
     # Sync JWT if DB mode differs (e.g. stale JWT without 'tn' field)
     db_testnet = bool(user_data.get("okx_testnet", True)) if user_data else True
@@ -65,6 +68,16 @@ async def update_testnet_credentials(
     if err:
         return err
 
+    if await is_engine_running(user["user_id"]):
+        credit_info = await user_repo.get_credit_info(user["user_id"])
+        return templates.TemplateResponse(
+            "account.html",
+            {"request": request, "user": user, "user_data": user_data,
+             "credit_info": credit_info, "engine_running": True,
+             "error": "自动交易运行中，请先停止引擎再修改 API 凭证"},
+            status_code=400,
+        )
+
     await user_repo.update_testnet_credentials(
         user_id=user["user_id"],
         okx_api_key_enc=encrypt(okx_api_key),
@@ -92,6 +105,16 @@ async def update_live_credentials(
     if err:
         return err
 
+    if await is_engine_running(user["user_id"]):
+        credit_info = await user_repo.get_credit_info(user["user_id"])
+        return templates.TemplateResponse(
+            "account.html",
+            {"request": request, "user": user, "user_data": user_data,
+             "credit_info": credit_info, "engine_running": True,
+             "error": "自动交易运行中，请先停止引擎再修改 API 凭证"},
+            status_code=400,
+        )
+
     await user_repo.update_live_credentials(
         user_id=user["user_id"],
         okx_live_api_key_enc=encrypt(okx_live_api_key),
@@ -117,12 +140,25 @@ async def switch_mode(
     if err:
         return err
 
-    testnet = (mode == "testnet")
-    # Guard: cannot switch to live if live credentials not set
-    if not testnet and not user_data.get("okx_live_api_key"):
+    # Guard: cannot switch mode while engine is running
+    if await is_engine_running(user["user_id"]):
+        credit_info = await user_repo.get_credit_info(user["user_id"])
         return templates.TemplateResponse(
             "account.html",
             {"request": request, "user": user, "user_data": user_data,
+             "credit_info": credit_info, "engine_running": True,
+             "error": "自动交易运行中，请先停止引擎再切换模式"},
+            status_code=400,
+        )
+
+    testnet = (mode == "testnet")
+    # Guard: cannot switch to live if live credentials not set
+    if not testnet and not user_data.get("okx_live_api_key"):
+        credit_info = await user_repo.get_credit_info(user["user_id"])
+        return templates.TemplateResponse(
+            "account.html",
+            {"request": request, "user": user, "user_data": user_data,
+             "credit_info": credit_info, "engine_running": False,
              "error": "请先填写实盘 API Key 再切换到实盘模式"},
             status_code=400,
         )

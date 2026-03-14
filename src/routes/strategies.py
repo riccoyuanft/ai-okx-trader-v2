@@ -180,5 +180,8 @@ async def strategy_activate(
 @router.post("/strategies/{strategy_id}/delete")
 async def strategy_delete(request: Request, strategy_id: str, user: dict = Depends(require_auth)):
     strategy_repo = get_strategy_repo()
+    strategy = await strategy_repo.get_by_id(strategy_id, user["user_id"])
+    if strategy and strategy.get("is_active") and await is_engine_running(user["user_id"]):
+        return RedirectResponse(url="/strategies?error=engine_running", status_code=302)
     await strategy_repo.delete(strategy_id, user["user_id"])
     return RedirectResponse(url="/strategies", status_code=302)

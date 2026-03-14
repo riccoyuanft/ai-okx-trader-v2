@@ -42,7 +42,12 @@
         </div>
       </div>
       <div x-show="!switching">
-        {% if is_testnet %}
+        {% if engine_running %}
+        <span class="text-xs px-4 py-2 rounded-lg font-medium bg-gray-800 text-gray-500 border border-gray-700 cursor-not-allowed"
+          title="自动交易运行中，请先停止引擎再切换模式">
+          运行中，无法切换
+        </span>
+        {% elif is_testnet %}
         <button @click="switching=true; $nextTick(() => $refs.switchTarget.value='live')"
           class="text-xs px-4 py-2 rounded-lg font-medium transition-colors
             {% if has_live %}bg-yellow-700 hover:bg-yellow-600 text-white{% else %}bg-gray-700 text-gray-500 cursor-not-allowed{% endif %}"
